@@ -174,37 +174,11 @@ const actions: Record<string, Handler> = {
     if (tokenLooksWrong || accountLooksWrong) {
       return json({ ok: false, tokenLooksWrong, accountLooksWrong, error: "A secret value isn't in the expected format" });
     }
-    // Diagnostics: is the token itself valid, and does it work for this account?
-    const probe = async (url: string) => {
-      try {
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${CF_TOKEN}` } });
-        const d = await r.json().catch(() => ({}));
-        return { status: r.status, success: d?.success === true, tokenStatus: d?.result?.status ?? null, error: d?.errors?.[0]?.message ? scrub(d.errors[0].message) : null };
-      } catch (e) { return { status: 0, success: false, tokenStatus: null, error: scrub((e as Error).message) }; }
-    };
-    const userTokenVerify = await probe("https://api.cloudflare.com/client/v4/user/tokens/verify");
-    const accountTokenVerify = await probe(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/tokens/verify`);
-    const accountAccess = await probe(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}`);
-    // Which accounts can this token see? (names + short ID prefixes only)
-    let accountsVisible: unknown = null;
     try {
-      const r = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", { headers: { Authorization: `Bearer ${CF_TOKEN}` } });
-      const d = await r.json().catch(() => ({}));
-      accountsVisible = Array.isArray(d?.result)
-        ? d.result.map((a: any) => ({ name: a.name, idStart: String(a.id).slice(0, 5), matchesSecret: a.id === CF_ACCOUNT }))
-        : { status: r.status, error: d?.errors?.[0]?.message ? scrub(d.errors[0].message) : null };
-    } catch (e) { accountsVisible = { error: scrub((e as Error).message) }; }
-    const diag = {
-      tokenLength: CF_TOKEN.length,
-      tokenPrefix: CF_TOKEN.slice(0, 5),
-      accountIdStart: CF_ACCOUNT.slice(0, 5),
-      userTokenVerify, accountTokenVerify, accountAccess, accountsVisible,
-    };
-    try {
-      const vids = await cf("");
-      return json({ ok: true, videos: Array.isArray(vids) ? vids.length : null, diag });
+      await cf("");
+      return json({ ok: true });
     } catch (e) {
-      return json({ ok: false, error: scrub((e as Error).message), diag });
+      return json({ ok: false, error: scrub((e as Error).message) });
     }
   },
 
