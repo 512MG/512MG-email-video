@@ -11,12 +11,29 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
   const [msg, setMsg] = useState("");
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => { setD((p) => ({ ...p, [k]: v })); setMsg(""); };
 
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoErr, setLogoErr] = useState("");
   const uploadLogo = async (file: File) => {
-    const ext = file.name.split(".").pop() ?? "png";
+    setLogoErr("");
+    if (!file.type.startsWith("image/")) { setLogoErr("That isn't an image. Use PNG, JPG, SVG or WebP."); return; }
+    if (file.size > 10 * 1024 * 1024) { setLogoErr("Logo is over 10 MB. Export a smaller version."); return; }
+    setLogoBusy(true);
+    const ext = (file.name.split(".").pop() ?? "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
     const path = `${org.id}/logo-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("brand").upload(path, file, { upsert: true, contentType: file.type });
-    if (error) { setMsg(error.message); return; }
-    set("logo_url", supabase.storage.from("brand").getPublicUrl(path).data.publicUrl);
+    const { error } = await supabase.storage.from("brand").upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+    if (error) { setLogoBusy(false); setLogoErr(`Logo upload failed: ${error.message}`); return; }
+    const url = supabase.storage.from("brand").getPublicUrl(path).data.publicUrl;
+    set("logo_url", url);
+    // Save the logo straight away so it isn't lost if "Save branding" isn't clicked
+    const { error: saveErr } = await supabase.from("organisations").update({ logo_url: url }).eq("id", org.id);
+    setLogoBusy(false);
+    if (saveErr) setLogoErr(`Logo uploaded but not saved: ${saveErr.message}`);
+    else { setMsg("Logo saved."); onSaved(); }
+  };
+  const removeLogo = async () => {
+    set("logo_url", null);
+    await supabase.from("organisations").update({ logo_url: null }).eq("id", org.id);
+    onSaved();
   };
 
   const save = async () => {
@@ -43,9 +60,15 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
             <div className="flex h-14 w-24 items-center justify-center rounded-lg border border-zinc-200" style={{ background: d.bg_color }}>
               {d.logo_url ? <img src={d.logo_url} className="max-h-10 max-w-20 object-contain" alt="" /> : <span className="text-xs" style={{ color: d.text_color }}>No logo</span>}
             </div>
-            <label className="btn-ghost cursor-pointer">Upload logo<input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])} /></label>
-            {d.logo_url && <button className="text-xs text-zinc-500 hover:text-ink" onClick={() => set("logo_url", null)}>Remove</button>}
+            <label className={`btn-ghost cursor-pointer ${logoBusy ? "pointer-events-none opacity-50" : ""}`}>
+              {logoBusy ? "Uploading…" : d.logo_url ? "Change logo" : "Upload logo"}
+              <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadLogo(f); }} />
+            </label>
+            {d.logo_url && !logoBusy && <button className="text-xs text-zinc-500 hover:text-ink" onClick={removeLogo}>Remove</button>}
           </div>
+          {logoErr && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{logoErr}</p>}
+          <p className="text-xs text-zinc-500">PNG with a transparent background works best. SVG, JPG and WebP are fine too.</p>
           <div className="grid grid-cols-3 gap-3">
             <Colour label="Background" value={d.bg_color} onChange={(v) => set("bg_color", v)} />
             <Colour label="Text" value={d.text_color} onChange={(v) => set("text_color", v)} />

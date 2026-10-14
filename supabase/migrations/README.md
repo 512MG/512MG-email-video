@@ -5,3 +5,4 @@ Migrations applied to the `email-video` project (moumgoefibpwrjyzzpqd), in order
 3. `app_settings_setup_code` – private settings table holding the one-time setup code.
 
 See the Supabase dashboard (Database → Migrations) for the exact SQL.
+4. `storage_select_policy_and_types` – members can read their org's files (needed for uploads), logo limit 10 MB, AVIF allowed.
