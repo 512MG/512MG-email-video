@@ -185,10 +185,20 @@ const actions: Record<string, Handler> = {
     const userTokenVerify = await probe("https://api.cloudflare.com/client/v4/user/tokens/verify");
     const accountTokenVerify = await probe(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/tokens/verify`);
     const accountAccess = await probe(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}`);
+    // Which accounts can this token see? (names + short ID prefixes only)
+    let accountsVisible: unknown = null;
+    try {
+      const r = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", { headers: { Authorization: `Bearer ${CF_TOKEN}` } });
+      const d = await r.json().catch(() => ({}));
+      accountsVisible = Array.isArray(d?.result)
+        ? d.result.map((a: any) => ({ name: a.name, idStart: String(a.id).slice(0, 5), matchesSecret: a.id === CF_ACCOUNT }))
+        : { status: r.status, error: d?.errors?.[0]?.message ? scrub(d.errors[0].message) : null };
+    } catch (e) { accountsVisible = { error: scrub((e as Error).message) }; }
     const diag = {
       tokenLength: CF_TOKEN.length,
       tokenPrefix: CF_TOKEN.slice(0, 5),
-      userTokenVerify, accountTokenVerify, accountAccess,
+      accountIdStart: CF_ACCOUNT.slice(0, 5),
+      userTokenVerify, accountTokenVerify, accountAccess, accountsVisible,
     };
     try {
       const vids = await cf("");
