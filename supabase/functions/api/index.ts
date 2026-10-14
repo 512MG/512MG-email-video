@@ -152,6 +152,19 @@ const actions: Record<string, Handler> = {
     return json({ needsSetup: (count ?? 0) === 0, streamConnected: !!(CF_ACCOUNT && CF_TOKEN) });
   },
 
+  // Confirms the Cloudflare details work (no secrets returned)
+  async stream_check() {
+    if (!CF_ACCOUNT || !CF_TOKEN) {
+      return json({ ok: false, accountIdSet: !!CF_ACCOUNT, tokenSet: !!CF_TOKEN, error: "Secrets missing" });
+    }
+    try {
+      const vids = await cf("");
+      return json({ ok: true, videos: Array.isArray(vids) ? vids.length : null });
+    } catch (e) {
+      return json({ ok: false, accountIdSet: true, tokenSet: true, error: (e as Error).message });
+    }
+  },
+
   async setup(_req, body) {
     const { count } = await admin.from("agency_admins").select("user_id", { count: "exact", head: true });
     if ((count ?? 0) > 0) return fail("Setup has already been done.", 403);
