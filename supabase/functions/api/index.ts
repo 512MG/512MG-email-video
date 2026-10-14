@@ -31,16 +31,28 @@ function needStream() {
 
 async function cf(path: string, init: RequestInit = {}) {
   needStream();
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/stream${path}`, {
+  let res: Response;
+  try {
+    res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT}/stream${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${CF_TOKEN}`, "Content-Type": "application/json", ...(init.headers ?? {}) },
   });
+  } catch (e) {
+    throw new HttpError(`Couldn't reach Cloudflare Stream: ${scrub((e as Error).message)}`, 502);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.success === false) {
     const msg = data?.errors?.[0]?.message ?? `Cloudflare error ${res.status}`;
     throw new HttpError(`Cloudflare Stream: ${msg}`, 502);
   }
   return data.result;
+}
+
+/** Never echo secrets back in error messages. */
+function scrub(msg: string) {
+  let out = String(msg ?? "");
+  for (const secret of [CF_TOKEN, CF_ACCOUNT]) if (secret) out = out.split(secret).join("[hidden]");
+  return out.replace(/Bearer\s+\S+/gi, "Bearer [hidden]").replace(/cf[a-z]{2}_[A-Za-z0-9_-]+/g, "[hidden]").slice(0, 300);
 }
 
 class HttpError extends Error {
@@ -157,11 +169,16 @@ const actions: Record<string, Handler> = {
     if (!CF_ACCOUNT || !CF_TOKEN) {
       return json({ ok: false, accountIdSet: !!CF_ACCOUNT, tokenSet: !!CF_TOKEN, error: "Secrets missing" });
     }
+    const tokenLooksWrong = /\s|curl|bearer|https?:/i.test(CF_TOKEN);
+    const accountLooksWrong = !/^[0-9a-f]{32}$/i.test(CF_ACCOUNT);
+    if (tokenLooksWrong || accountLooksWrong) {
+      return json({ ok: false, tokenLooksWrong, accountLooksWrong, error: "A secret value isn't in the expected format" });
+    }
     try {
       const vids = await cf("");
       return json({ ok: true, videos: Array.isArray(vids) ? vids.length : null });
     } catch (e) {
-      return json({ ok: false, accountIdSet: true, tokenSet: true, error: (e as Error).message });
+      return json({ ok: false, error: scrub((e as Error).message) });
     }
   },
 
@@ -367,7 +384,7 @@ Deno.serve(async (req) => {
   try {
     return await fn(req, body);
   } catch (e) {
-    if (e instanceof HttpError) return fail(e.message, e.status);
+    if (e instanceof HttpError) return fail(scrub(e.message), e.status);
     console.error(e);
     return fail("Something went wrong.", 500);
   }
