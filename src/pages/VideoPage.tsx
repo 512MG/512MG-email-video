@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, fmtDate, fmtDuration, fromLocalInput, liveState, supabase, toLocalInput, watchUrl, type Org, type Stat, type Video } from "../lib/supabase";
+import { api, downloadCsv, fmtDate, fmtDuration, fromLocalInput, liveState, supabase, toLocalInput, watchUrl, type Org, type Stat, type Video } from "../lib/supabase";
 import { Badge } from "../components/Badge";
 import EmailImage from "../components/EmailImage";
 import PageEditor from "../components/PageEditor";
 
+type ClickRow = { kind: string; label: string; url: string | null; clicks: number; last_click: string };
 type ViewRow = { id: string; started_at: string; seconds_watched: number; max_position: number; completed: boolean; device: string | null };
 
 export default function VideoPage() {
@@ -14,6 +15,7 @@ export default function VideoPage() {
   const [v, setV] = useState<Video | null>(null);
   const [stat, setStat] = useState<Stat | null>(null);
   const [views, setViews] = useState<ViewRow[]>([]);
+  const [clicks, setClicks] = useState<ClickRow[]>([]);
   const [copied, setCopied] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -23,15 +25,19 @@ export default function VideoPage() {
       supabase.from("videos").select("*").eq("id", videoId).maybeSingle(),
     ]);
     setOrg(o as Org); setV(vid as Video);
-    const { data: s } = await supabase.rpc("video_stats", { p_org: orgId });
+    const { data: s } = await supabase.rpc("video_stats_v2", { p_org: orgId });
     setStat(((s ?? []) as Stat[]).find((r) => r.video_id === videoId) ?? null);
     const { data: w } = await supabase.from("views").select("id, started_at, seconds_watched, max_position, completed, device").eq("video_id", videoId).order("started_at", { ascending: false }).limit(50);
     setViews((w as ViewRow[]) ?? []);
+    const { data: c } = await supabase.rpc("click_breakdown", { p_video: videoId });
+    setClicks((c as ClickRow[]) ?? []);
   };
   useEffect(() => { load(); }, [videoId]);
 
   useEffect(() => {
-    if (!v || v.status === "ready" || v.status === "error") return;
+    if (!v) return;
+    const busy = v.status === "uploading" || v.status === "processing" || !!v.pending_uid || v.captions_status === "generating";
+    if (!busy) return;
     const t = setTimeout(async () => { await api("refresh_video", { video_id: v.id }).catch(() => {}); load(); }, 6000);
     return () => clearTimeout(t);
   }, [v]);
@@ -102,6 +108,10 @@ export default function VideoPage() {
         </Card>
       </div>
 
+      <Card title="Video file & subtitles">
+        <VideoFile v={v} org={org} onChange={(nv) => setV(nv)} onDuplicate={() => nav(`/o/${org.id}?tab=videos&copy=${v.id}`)} />
+      </Card>
+
       <Card title="Email image & code" hint="Put this in your email. It links to the watch page.">
         <EmailImage org={org} video={v} onSaved={(u) => { setV({ ...v, email_image_url: u }); setMsg("Email image saved."); }} />
         {v.email_image_url && (
@@ -123,7 +133,28 @@ export default function VideoPage() {
           <Stat label="Avg watched" value={fmtDuration(stat?.avg_seconds)} sub={v.duration ? `of ${fmtDuration(v.duration)}` : undefined} />
           <Stat label="Watched to the end" value={String(stat?.completions ?? 0)} />
         </div>
+        <div>
+          <h3 className="mb-2 mt-2 text-sm font-semibold">Clicks <span className="font-normal text-zinc-500">({stat?.clicks ?? 0} total)</span></h3>
+          {clicks.length === 0 ? <p className="text-sm text-zinc-500">No clicks yet. Clicks on buttons, ticket links, sponsor logos and links in your text are counted here.</p> : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-zinc-500"><tr><th className="py-2">Link</th><th>Type</th><th className="text-right">Clicks</th></tr></thead>
+              <tbody>
+                {clicks.map((c, i) => (
+                  <tr key={i} className="border-t border-zinc-100">
+                    <td className="py-2"><div className="font-medium">{c.label}</div>{c.url && <div className="max-w-xs truncate text-xs text-zinc-400">{c.url}</div>}</td>
+                    <td className="capitalize text-zinc-500">{c.kind === "fixture" ? "Tickets" : c.kind}</td>
+                    <td className="text-right font-semibold">{c.clicks}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="flex justify-end">
+          <button className="btn-ghost" onClick={() => exportCsv(org, v, stat, views, clicks)}>Download CSV</button>
+        </div>
         {views.length > 0 && (
+          <><h3 className="-mb-2 mt-2 text-sm font-semibold">Recent views</h3>
           <table className="mt-4 w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-zinc-500"><tr><th className="py-2">When</th><th>Device</th><th className="text-right">Watched</th></tr></thead>
             <tbody>
@@ -135,7 +166,7 @@ export default function VideoPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></>
         )}
       </Card>
 
@@ -182,6 +213,98 @@ function TimeWindow({ v, onSave }: { v: Video; onSave: (p: Partial<Video>) => vo
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <button className="btn-primary" onClick={save}>Save live window</button>
+    </div>
+  );
+}
+
+function exportCsv(org: Org, v: Video, stat: Stat | null, views: ViewRow[], clicks: ClickRow[]) {
+  const rows: (string | number | null)[][] = [
+    ["Video", v.title], ["Link", watchUrl(org.slug, v.slug)],
+    ["Plays", stat?.plays ?? 0], ["Unique viewers", stat?.viewers ?? 0], ["Avg watched (secs)", stat?.avg_seconds ?? 0],
+    ["Watched to end", stat?.completions ?? 0], ["Clicks", stat?.clicks ?? 0], [],
+    ["Clicks by link"], ["Link", "Type", "URL", "Clicks"],
+    ...clicks.map((c) => [c.label, c.kind, c.url, c.clicks]), [],
+    ["Recent views (latest 50)"], ["When", "Device", "Seconds watched", "Watched to end"],
+    ...views.map((w) => [w.started_at.slice(0, 16).replace("T", " "), w.device, Math.round(Number(w.seconds_watched)), w.completed ? "Yes" : "No"]),
+  ];
+  downloadCsv(`${org.slug}-${v.slug}-stats.csv`, rows);
+}
+
+function VideoFile({ v, org, onChange, onDuplicate }: { v: Video; org: Org; onChange: (v: Video) => void; onDuplicate: () => void }) {
+  const [progress, setProgress] = useState<number | null>(null);
+  const [err, setErr] = useState("");
+  const [capBusy, setCapBusy] = useState(false);
+
+  const replace = async (file: File) => {
+    if (file.size > 200 * 1024 * 1024) { setErr("Files up to 200 MB for now."); return; }
+    if (!confirm("Replace this video? The link stays the same. The current video keeps playing until the new one is ready.")) return;
+    setErr(""); setProgress(0);
+    try {
+      const { uploadURL, video } = await api<{ uploadURL: string; video: Video }>("create_upload", { org_id: org.id, replace_video_id: v.id });
+      onChange(video);
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const fd = new FormData();
+        fd.append("file", file);
+        xhr.upload.onprogress = (ev) => ev.lengthComputable && setProgress(Math.round((ev.loaded / ev.total) * 100));
+        xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error("Upload failed. Please try again.")));
+        xhr.onerror = () => reject(new Error("Upload failed. Check your connection."));
+        xhr.open("POST", uploadURL);
+        xhr.send(fd);
+      });
+      const r = await api<{ video: Video }>("refresh_video", { video_id: v.id });
+      onChange(r.video);
+    } catch (e: any) { setErr(e.message); } finally { setProgress(null); }
+  };
+
+  const cancel = async () => {
+    const r = await api<{ video: Video }>("cancel_replace", { video_id: v.id });
+    onChange(r.video);
+  };
+
+  const toggleCaptions = async () => {
+    setCapBusy(true); setErr("");
+    try {
+      const r = await api<{ video: Video }>("captions", { video_id: v.id, enable: !v.captions });
+      onChange(r.video);
+    } catch (e: any) { setErr(e.message); } finally { setCapBusy(false); }
+  };
+
+  const capLabel = !v.captions ? "Off" : v.captions_status === "ready" ? "On" : v.captions_status === "error" ? "Failed, try turning off and on" : "Generating… (a few minutes)";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3">
+        <div>
+          <div className="text-sm font-semibold">Replace video file</div>
+          <div className="text-xs text-zinc-500">{v.pending_uid ? "New file is processing. The old one plays until it's ready." : "Swap in a new file. The link and everything on the page stay the same."}</div>
+        </div>
+        {v.pending_uid && progress === null ? (
+          <button className="btn-ghost" onClick={cancel}>Cancel replacement</button>
+        ) : (
+          <label className={`btn-ghost cursor-pointer ${progress !== null ? "pointer-events-none opacity-60" : ""}`}>
+            {progress !== null ? `Uploading ${progress}%` : "Choose new file"}
+            <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) replace(f); }} />
+          </label>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3">
+        <div>
+          <div className="text-sm font-semibold">Auto subtitles (English)</div>
+          <div className="text-xs text-zinc-500">Generated by Cloudflare. Viewers can switch them on or off in the player. Status: <strong>{capLabel}</strong></div>
+        </div>
+        <button className={v.captions ? "btn-ghost" : "btn-primary"} disabled={capBusy || v.status !== "ready"} onClick={toggleCaptions}>
+          {capBusy ? "…" : v.captions ? "Turn off" : "Turn on"}
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 p-3">
+        <div>
+          <div className="text-sm font-semibold">Duplicate this page</div>
+          <div className="text-xs text-zinc-500">Upload a new video with the same text, buttons, fixtures, sponsors and countdown.</div>
+        </div>
+        <button className="btn-ghost" onClick={onDuplicate}>Duplicate</button>
+      </div>
+      {err && <p className="text-sm text-red-600">{err}</p>}
     </div>
   );
 }

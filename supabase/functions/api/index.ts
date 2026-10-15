@@ -1,6 +1,6 @@
 // Email Video API: one function, many actions.
-// Public actions: setup_status, setup (first admin only), watch, progress.
-// Signed-in actions: create_upload, refresh_video, thumbnail, delete_video,
+// Public actions: setup_status, setup (first admin only), watch, progress, click, report.
+// Signed-in actions: create_upload, cancel_replace, captions, refresh_video, thumbnail, delete_video,
 //                    create_user, remove_member, reset_password.
 // Secrets needed (Supabase → Edge Functions → Secrets): CF_ACCOUNT_ID, CF_STREAM_TOKEN.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -140,14 +140,49 @@ async function findUserByEmail(email: string) {
 
 async function syncFromStream(v: Record<string, any>) {
   if (!v.stream_uid) return v;
-  const s = await cf(`/${v.stream_uid}`);
   const patch: Record<string, unknown> = {};
+
+  // A replacement upload is in progress: keep the old video playing until the new one is ready
+  if (v.pending_uid) {
+    const n = await cf(`/${v.pending_uid}`).catch(() => null);
+    if (n?.readyToStream) {
+      const oldUid = v.stream_uid;
+      patch.stream_uid = v.pending_uid;
+      patch.pending_uid = null;
+      patch.status = "ready";
+      if (n.duration > 0) patch.duration = n.duration;
+      if (n.playback?.hls) patch.playback_host = new URL(n.playback.hls).host;
+      if (v.captions) patch.captions_status = "generating";
+      const { data } = await admin.from("videos").update(patch).eq("id", v.id).select("*").single();
+      try { await cf(`/${oldUid}`, { method: "DELETE" }); } catch { /* already gone */ }
+      if (v.captions) { try { await cf(`/${v.pending_uid}/captions/en/generate`, { method: "POST" }); } catch { /* retry later */ } }
+      return data ?? v;
+    }
+    if (n?.status?.state === "error") {
+      const { data } = await admin.from("videos").update({ pending_uid: null }).eq("id", v.id).select("*").single();
+      return { ...(data ?? v), replace_failed: true };
+    }
+    return v;
+  }
+
+  const s = await cf(`/${v.stream_uid}`);
   if (s.readyToStream) patch.status = "ready";
   else if (s.status?.state === "error") patch.status = "error";
   else if (s.status?.state && s.status.state !== "pendingupload") patch.status = "processing";
   if (s.duration && s.duration > 0) patch.duration = s.duration;
   const hls: string | undefined = s.playback?.hls;
   if (hls) patch.playback_host = new URL(hls).host;
+
+  if (v.captions && v.captions_status === "generating" && s.readyToStream) {
+    try {
+      const list = await cf(`/${v.stream_uid}/captions`);
+      const en = Array.isArray(list) ? list.find((c: any) => c.language === "en") : null;
+      if (!en) { await cf(`/${v.stream_uid}/captions/en/generate`, { method: "POST" }).catch(() => {}); }
+      else if (en.status === "ready") patch.captions_status = "ready";
+      else if (en.status === "error") patch.captions_status = "error";
+    } catch { /* try again next refresh */ }
+  }
+
   if (Object.keys(patch).length) {
     const { data } = await admin.from("videos").update(patch).eq("id", v.id).select("*").single();
     return data ?? v;
@@ -248,15 +283,57 @@ const actions: Record<string, Handler> = {
     const orgId = String(body.org_id ?? "");
     const title = String(body.title ?? "").trim() || "Untitled video";
     await requireMember(me.id, orgId);
+    const replaceId = body.replace_video_id ? String(body.replace_video_id) : null;
+    let target: Record<string, any> | null = null;
+    if (replaceId) {
+      const t = await videoForUser(me.id, replaceId);
+      target = t;
+      if (t.org_id !== orgId) return fail("That video belongs to a different organisation.", 403);
+    }
     const r = await cf("/direct_upload", {
       method: "POST",
-      body: JSON.stringify({ maxDurationSeconds: 3600, requireSignedURLs: true, meta: { name: title, org: orgId } }),
+      body: JSON.stringify({ maxDurationSeconds: 3600, requireSignedURLs: true, meta: { name: target?.title ?? title, org: orgId } }),
     });
+    if (target) {
+      // Old upload that never finished? Just swap it straight in.
+      if (target.status !== "ready") {
+        const { data } = await admin.from("videos").update({ stream_uid: r.uid, status: "uploading", pending_uid: null, playback_host: null }).eq("id", target.id).select("*").single();
+        if (target.stream_uid) { try { await cf(`/${target.stream_uid}`, { method: "DELETE" }); } catch { /* gone */ } }
+        return json({ uploadURL: r.uploadURL, video: data });
+      }
+      if (target.pending_uid) { try { await cf(`/${target.pending_uid}`, { method: "DELETE" }); } catch { /* gone */ } }
+      const { data } = await admin.from("videos").update({ pending_uid: r.uid }).eq("id", target.id).select("*").single();
+      return json({ uploadURL: r.uploadURL, video: data });
+    }
     const { data, error } = await admin.from("videos")
       .insert({ org_id: orgId, title, stream_uid: r.uid, status: "uploading", created_by: me.id })
       .select("*").single();
     if (error) return fail(error.message, 500);
     return json({ uploadURL: r.uploadURL, video: data });
+  },
+
+  async cancel_replace(req, body) {
+    const me = await currentUser(req);
+    const v = await videoForUser(me.id, String(body.video_id));
+    if (v.pending_uid) { try { await cf(`/${v.pending_uid}`, { method: "DELETE" }); } catch { /* gone */ } }
+    const { data } = await admin.from("videos").update({ pending_uid: null }).eq("id", v.id).select("*").single();
+    return json({ video: data });
+  },
+
+  async captions(req, body) {
+    const me = await currentUser(req);
+    const v = await videoForUser(me.id, String(body.video_id));
+    const enable = body.enable === true;
+    if (enable) {
+      if (v.status !== "ready") return fail("Wait until the video has finished processing.", 409);
+      try { await cf(`/${v.stream_uid}/captions/en`, { method: "DELETE" }); } catch { /* none yet */ }
+      await cf(`/${v.stream_uid}/captions/en/generate`, { method: "POST" });
+      const { data } = await admin.from("videos").update({ captions: true, captions_status: "generating" }).eq("id", v.id).select("*").single();
+      return json({ video: data });
+    }
+    try { await cf(`/${v.stream_uid}/captions/en`, { method: "DELETE" }); } catch { /* none */ }
+    const { data } = await admin.from("videos").update({ captions: false, captions_status: null }).eq("id", v.id).select("*").single();
+    return json({ video: data });
   },
 
   async refresh_video(req, body) {
@@ -280,8 +357,8 @@ const actions: Record<string, Handler> = {
   async delete_video(req, body) {
     const me = await currentUser(req);
     const v = await videoForUser(me.id, String(body.video_id));
-    if (v.stream_uid && CF_ACCOUNT && CF_TOKEN) {
-      try { await cf(`/${v.stream_uid}`, { method: "DELETE" }); } catch (_) { /* already gone */ }
+    for (const uid of [v.stream_uid, v.pending_uid]) {
+      if (uid && CF_ACCOUNT && CF_TOKEN) { try { await cf(`/${uid}`, { method: "DELETE" }); } catch (_) { /* already gone */ } }
     }
     await admin.from("videos").delete().eq("id", v.id);
     return json({ ok: true });
@@ -310,6 +387,7 @@ const actions: Record<string, Handler> = {
       accent_color: org.accent_color, font: org.font,
       not_live_title: org.not_live_title, not_live_message: org.not_live_message,
       expired_title: org.expired_title, expired_message: org.expired_message,
+      corner_style: org.corner_style ?? "rounded",
     };
     if (!v) return json({ state: "not_found", brand });
 
@@ -322,13 +400,31 @@ const actions: Record<string, Handler> = {
       .map((b: any) => ({ label: String(b?.label ?? "").trim().slice(0, 60), url: safeUrl(b?.url), style: b?.style === "secondary" ? "secondary" : "primary" }))
       .filter((b: any) => b.label && b.url)
       .slice(0, 8);
+    let fixtures: unknown[] = [];
+    if (v.show_fixtures) {
+      const { data: fx } = await admin.from("fixtures").select("id, kickoff, title, home_away, competition, venue, ticket_url")
+        .eq("org_id", org.id).gte("kickoff", new Date(Date.now() - 2 * 3600 * 1000).toISOString())
+        .order("kickoff", { ascending: true }).limit(6);
+      fixtures = (fx ?? []).map((f: any) => ({ ...f, ticket_url: safeUrl(f.ticket_url) }));
+    }
+    const sponsors = v.show_sponsors
+      ? (Array.isArray(org.sponsors) ? org.sponsors : [])
+          .map((sp: any) => ({ name: String(sp?.name ?? "").slice(0, 80), logo_url: safeUrl(sp?.logo_url), url: safeUrl(sp?.url) }))
+          .filter((sp: any) => sp.logo_url)
+      : [];
     const page = {
       title: v.title,
       headline: v.headline ?? "",
       message: v.message ?? "",
       body: v.body ?? "",
       buttons,
+      fixtures,
+      fixtures_title: v.fixtures_title || "Upcoming fixtures",
+      sponsors,
+      sponsors_title: org.sponsors_title || "Our partners",
+      countdown: v.countdown ?? "none",
       live_from: v.live_from,
+      live_until: v.switched_off ? null : v.live_until,
     };
     const now = Date.now();
     let state = "live";
@@ -359,8 +455,66 @@ const actions: Record<string, Handler> = {
       await admin.from("views").insert({ id: viewId, video_id: v.id, viewer_id: viewerId, device: String(body.device ?? "").slice(0, 20) || null });
     }
     return json({
-      state, brand, page, view_id: viewId,
-      player: { iframe: `${base}/iframe`, poster: `${base}/thumbnails/thumbnail.jpg?time=1s&height=720`, duration: fresh.duration },
+      state, brand, page, view_id: viewId, vid: v.id,
+      player: {
+        iframe: `${base}/iframe`,
+        poster: `${base}/thumbnails/thumbnail.jpg?time=1s&height=720`,
+        duration: fresh.duration,
+        captions: !!(fresh.captions && fresh.captions_status === "ready"),
+      },
+    });
+  },
+
+  async click(_req, body) {
+    const vid = String(body.vid ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(vid)) return fail("bad video");
+    const kind = ["button", "fixture", "sponsor", "link"].includes(body.kind) ? body.kind : "link";
+    const label = String(body.label ?? "").trim().slice(0, 120);
+    if (!label) return fail("missing label");
+    const url = String(body.url ?? "").slice(0, 500) || null;
+    const viewId = /^[0-9a-f-]{36}$/i.test(String(body.view_id ?? "")) ? String(body.view_id) : null;
+    const { data: v } = await admin.from("videos").select("id").eq("id", vid).maybeSingle();
+    if (!v) return fail("bad video", 404);
+    // Basic flood protection: at most 20 clicks per view
+    if (viewId) {
+      const { count } = await admin.from("clicks").select("id", { count: "exact", head: true }).eq("view_id", viewId);
+      if ((count ?? 0) >= 20) return json({ ok: true });
+    }
+    await admin.from("clicks").insert({ video_id: vid, view_id: viewId, kind, label, url });
+    return json({ ok: true });
+  },
+
+  // Shareable stats page for a client (no login): /r/<token>
+  async report(_req, body) {
+    const token = String(body.token ?? "");
+    if (token.length < 20) return json({ state: "not_found" });
+    const { data: org } = await admin.from("organisations").select("*").eq("report_token", token).maybeSingle();
+    if (!org) return json({ state: "not_found" });
+    const { data: vids } = await admin.from("videos").select("id, title, duration, created_at, live_from, live_until, switched_off, status")
+      .eq("org_id", org.id).order("created_at", { ascending: false });
+    const { data: stats } = await admin.rpc("video_stats_v2", { p_org: org.id });
+    const byId: Record<string, any> = {};
+    (stats ?? []).forEach((r: any) => (byId[r.video_id] = r));
+    const ids = (vids ?? []).map((v: any) => v.id);
+    const { data: clickRows } = ids.length
+      ? await admin.from("clicks").select("video_id, kind, label").in("video_id", ids).limit(50000)
+      : { data: [] as any[] };
+    const clicksBy: Record<string, Record<string, number>> = {};
+    (clickRows ?? []).forEach((c: any) => {
+      clicksBy[c.video_id] ??= {};
+      clicksBy[c.video_id][c.label] = (clicksBy[c.video_id][c.label] ?? 0) + 1;
+    });
+    return json({
+      state: "ok",
+      brand: { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style },
+      videos: (vids ?? []).filter((v: any) => v.status === "ready").map((v: any) => ({
+        title: v.title, duration: v.duration, created_at: v.created_at, live_from: v.live_from, live_until: v.live_until, switched_off: v.switched_off,
+        plays: Number(byId[v.id]?.plays ?? 0), viewers: Number(byId[v.id]?.viewers ?? 0),
+        avg_seconds: Number(byId[v.id]?.avg_seconds ?? 0), total_seconds: Number(byId[v.id]?.total_seconds ?? 0),
+        completions: Number(byId[v.id]?.completions ?? 0),
+        clicks: Object.entries(clicksBy[v.id] ?? {}).map(([label, n]) => ({ label, clicks: n })).sort((a, b) => b.clicks - a.clicks),
+      })),
+      generated_at: new Date().toISOString(),
     });
   },
 

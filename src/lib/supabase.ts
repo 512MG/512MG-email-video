@@ -22,7 +22,24 @@ export type Org = {
   not_live_message: string;
   expired_title: string;
   expired_message: string;
+  corner_style: "rounded" | "square";
+  sponsors: Sponsor[];
+  sponsors_title: string;
+  report_token: string | null;
   created_at: string;
+};
+
+export type Sponsor = { name: string; logo_url: string; url: string };
+
+export type Fixture = {
+  id: string;
+  org_id: string;
+  kickoff: string;
+  title: string;
+  home_away: "home" | "away" | "neutral" | null;
+  competition: string | null;
+  venue: string | null;
+  ticket_url: string | null;
 };
 
 export type Video = {
@@ -45,6 +62,13 @@ export type Video = {
   live_from: string | null;
   live_until: string | null;
   switched_off: boolean;
+  show_fixtures: boolean;
+  fixtures_title: string | null;
+  show_sponsors: boolean;
+  countdown: "none" | "expiry" | "fixture";
+  captions: boolean;
+  captions_status: "generating" | "ready" | "error" | null;
+  pending_uid: string | null;
   created_at: string;
 };
 
@@ -56,6 +80,7 @@ export type Stat = {
   avg_seconds: number;
   completions: number;
   last_view: string | null;
+  clicks: number;
 };
 
 export type Membership = { org_id: string; user_id: string; email: string | null; role: "owner" | "member"; created_at: string };
@@ -74,10 +99,41 @@ export async function api<T = any>(action: string, body: Record<string, unknown>
   return json as T;
 }
 
+/** Fire-and-forget event that survives the page navigating away (used for click tracking). */
+export function beacon(action: string, body: Record<string, unknown>) {
+  const payload = JSON.stringify({ action, ...body });
+  const url = `${SUPABASE_URL}/functions/v1/api`;
+  try {
+    if (navigator.sendBeacon && navigator.sendBeacon(url, new Blob([payload], { type: "text/plain" }))) return;
+  } catch { /* fall through */ }
+  fetch(url, { method: "POST", body: payload, keepalive: true, headers: { "Content-Type": "text/plain" } }).catch(() => {});
+}
+
+/** Turns rows into a CSV file download. */
+export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
+  const esc = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+export function randomToken(len = 32) {
+  const chars = "abcdefghijkmnpqrstuvwxyz23456789";
+  return Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => chars[b % chars.length]).join("");
+}
+
 export const watchUrl = (orgSlug: string, videoSlug: string) => `${window.location.origin}/v/${orgSlug}/${videoSlug}`;
 
 export function liveState(v: Video): { label: string; tone: "green" | "amber" | "zinc" | "red" } {
   const now = Date.now();
+  if (v.pending_uid) return { label: "Replacing video", tone: "amber" };
   if (v.status === "error") return { label: "Upload failed", tone: "red" };
   if (v.status !== "ready") return { label: "Processing", tone: "amber" };
   if (v.switched_off) return { label: "Switched off", tone: "red" };

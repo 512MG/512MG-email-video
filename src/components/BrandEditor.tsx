@@ -38,7 +38,7 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
 
   const save = async () => {
     setSaving(true);
-    const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font",
+    const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font", "corner_style",
       "not_live_title", "not_live_message", "expired_title", "expired_message"];
     const patch: Record<string, unknown> = {};
     fields.forEach((f) => (patch[f] = typeof d[f] === "string" && (d[f] as string).trim() === "" ? null : d[f]));
@@ -49,7 +49,7 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
     if (!error) onSaved();
   };
 
-  const brand = { name: org.name, logo_url: d.logo_url, bg_color: d.bg_color, text_color: d.text_color, accent_color: d.accent_color, font: d.font };
+  const brand = { name: org.name, logo_url: d.logo_url, bg_color: d.bg_color, text_color: d.text_color, accent_color: d.accent_color, font: d.font, corner_style: d.corner_style };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -76,6 +76,18 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           <div>
             <label className="label">Font</label>
             <select className="input" value={d.font} onChange={(e) => set("font", e.target.value)}>{FONTS.map((f) => <option key={f}>{f}</option>)}</select>
+          </div>
+          <div>
+            <label className="label">Video & button corners</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([["rounded", "Rounded"], ["square", "Square (hard edge)"]] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => set("corner_style", k)}
+                  className={`flex items-center gap-2 rounded-lg border p-2.5 text-sm font-semibold ${d.corner_style === k ? "border-ink bg-zinc-50" : "border-zinc-200 text-zinc-500 hover:border-zinc-400"}`}>
+                  <span className={`h-6 w-9 border-2 border-current ${k === "rounded" ? "rounded-md" : ""}`} />
+                  {l}
+                </button>
+              ))}
+            </div>
           </div>
         </Section>
 
@@ -105,7 +117,9 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           <BrandedPage compact brand={brand}>
             {previewState === "live" && (
               <VideoPageContent compact brand={brand} video={<VideoPlaceholder />}
-                content={{ headline: "Example headline", message: "Each video sets its own text and buttons.", body: "", buttons: [{ label: "Example button", url: "#", style: "primary" }] }} />
+                content={{ headline: "Example headline", message: "Each video sets its own text and buttons.", body: "", buttons: [{ label: "Example button", url: "#", style: "primary" }, { label: "Second button", url: "#", style: "secondary" }],
+                  fixtures: [{ id: "x", kickoff: new Date(Date.now() + 5 * 86400000).toISOString(), title: "Example fixture", home_away: "home", competition: "League", venue: null, ticket_url: "#" }],
+                  sponsors: org.sponsors?.length ? org.sponsors : undefined, sponsors_title: org.sponsors_title }} />
             )}
             {previewState === "not_live" && <StateMessage title={d.not_live_title} message={d.not_live_message} />}
             {previewState === "expired" && <StateMessage title={d.expired_title} message={d.expired_message} />}

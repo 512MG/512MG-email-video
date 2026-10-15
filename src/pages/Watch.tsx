@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { api } from "../lib/supabase";
-import { BrandedPage, StateMessage, VideoPageContent, type Brand, type PageButton } from "../components/BrandedPage";
+import { api, beacon } from "../lib/supabase";
+import { BrandedPage, StateMessage, VideoPageContent, type Brand, type PageContent, type TrackFn } from "../components/BrandedPage";
 
 type WatchResponse = {
   state: "live" | "not_live" | "expired" | "processing" | "not_found";
@@ -9,9 +9,10 @@ type WatchResponse = {
     not_live_title: string; not_live_message: string;
     expired_title: string; expired_message: string;
   };
-  page?: { title: string; headline: string; message: string; body: string; buttons: PageButton[]; live_from: string | null };
+  page?: PageContent & { title: string; live_from: string | null };
   view_id?: string | null;
-  player?: { iframe: string; poster: string; duration: number | null };
+  vid?: string;
+  player?: { iframe: string; poster: string; duration: number | null; captions?: boolean };
 };
 
 function viewerId() {
@@ -62,13 +63,17 @@ export default function Watch() {
   if (data.state === "processing") return <BrandedPage brand={b}><StateMessage title="Almost ready" message="This video is still being prepared. Try again in a few minutes." /></BrandedPage>;
 
   const p = data.page!;
+  const track: TrackFn | undefined = data.view_id && data.vid
+    ? (kind, label, url) => beacon("click", { vid: data.vid, view_id: data.view_id, kind, label, url })
+    : undefined; // previews aren't tracked
   return (
     <BrandedPage brand={b}>
       {preview && <div className="mb-4 inline-block rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-white">Preview – not counted in stats</div>}
       <VideoPageContent
         brand={b}
-        content={{ headline: p.headline, message: p.message, body: p.body, buttons: p.buttons ?? [] }}
-        video={<Player src={data.player!.iframe} poster={data.player!.poster} viewId={data.view_id ?? null} />}
+        content={{ ...p, buttons: p.buttons ?? [] }}
+        onTrack={track}
+        video={<Player src={data.player!.iframe} poster={data.player!.poster} captions={!!data.player!.captions} viewId={data.view_id ?? null} />}
       />
     </BrandedPage>
   );
@@ -96,9 +101,9 @@ function loadSdk(): Promise<void> {
 }
 
 /** Cloudflare Stream player; reports watch progress for the dashboard stats. */
-function Player({ src, poster, viewId }: { src: string; poster: string; viewId: string | null }) {
+function Player({ src, poster, viewId, captions }: { src: string; poster: string; viewId: string | null; captions: boolean }) {
   const ref = useRef<HTMLIFrameElement>(null);
-  const url = `${src}?poster=${encodeURIComponent(poster)}&preload=auto&letterboxColor=transparent`;
+  const url = `${src}?poster=${encodeURIComponent(poster)}&preload=auto&letterboxColor=transparent${captions ? "&defaultTextTrack=en" : ""}`;
 
   useEffect(() => {
     if (!viewId || !ref.current) return;

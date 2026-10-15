@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import type { Org, Video } from "../lib/supabase";
+import { supabase, type Fixture, type Org, type Video } from "../lib/supabase";
 import { BrandedPage, VideoPageContent, VideoPlaceholder, type PageButton } from "./BrandedPage";
 
 const MAX_BUTTONS = 6;
 
-type Draft = { title: string; headline: string; message: string; body: string; buttons: PageButton[] };
+type Draft = {
+  title: string; headline: string; message: string; body: string; buttons: PageButton[];
+  show_fixtures: boolean; fixtures_title: string; show_sponsors: boolean; countdown: "none" | "expiry" | "fixture";
+};
 
 const fromVideo = (v: Video): Draft => ({
   title: v.title,
@@ -12,6 +15,10 @@ const fromVideo = (v: Video): Draft => ({
   message: v.message ?? "",
   body: v.body ?? "",
   buttons: (v.buttons ?? []).map((b) => ({ label: b.label ?? "", url: b.url ?? "", style: b.style === "secondary" ? "secondary" : "primary" })),
+  show_fixtures: !!v.show_fixtures,
+  fixtures_title: v.fixtures_title ?? "",
+  show_sponsors: !!v.show_sponsors,
+  countdown: v.countdown ?? "none",
 });
 
 function normaliseUrl(u: string) {
@@ -30,6 +37,15 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => { setD(fromVideo(video)); }, [video.id]);
+
+  const [fixtures, setFixtures] = useState<Fixture[]>([]);
+  useEffect(() => {
+    supabase.from("fixtures").select("*").eq("org_id", org.id)
+      .gte("kickoff", new Date(Date.now() - 2 * 3600 * 1000).toISOString())
+      .order("kickoff", { ascending: true }).limit(6)
+      .then(({ data }) => setFixtures((data as Fixture[]) ?? []));
+  }, [org.id]);
+  const sponsorCount = (org.sponsors ?? []).filter((s) => s.logo_url).length;
 
   const original = JSON.stringify(fromVideo(video));
   const dirty = JSON.stringify(d) !== original;
@@ -59,12 +75,23 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
       message: d.message.trim() || null,
       body: d.body.trim() || null,
       buttons,
+      show_fixtures: d.show_fixtures,
+      fixtures_title: d.fixtures_title.trim() || null,
+      show_sponsors: d.show_sponsors,
+      countdown: d.countdown,
     });
     setSaving(false);
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
   };
 
-  const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font };
+  const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style };
+  const previewContent = {
+    ...d,
+    fixtures: d.show_fixtures ? fixtures : [],
+    sponsors: d.show_sponsors ? org.sponsors : [],
+    sponsors_title: org.sponsors_title,
+    live_until: video.switched_off ? null : video.live_until,
+  };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
@@ -124,6 +151,29 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
           </div>
         </Group>
 
+        <Group title="Extras">
+          <Toggle checked={d.show_fixtures} onChange={(v) => set("show_fixtures", v)} label="Show upcoming fixtures"
+            hint={fixtures.length ? `Shows the next ${Math.min(fixtures.length, 6)} from the Fixtures tab. Past ones drop off automatically.` : "No upcoming fixtures yet. Add them on the Fixtures tab."} />
+          {d.show_fixtures && (
+            <div className="pl-11">
+              <input className="input max-w-xs" value={d.fixtures_title} onChange={(e) => set("fixtures_title", e.target.value)} placeholder="Heading: Upcoming fixtures" />
+            </div>
+          )}
+          <Toggle checked={d.show_sponsors} onChange={(v) => set("show_sponsors", v)} label="Show sponsors"
+            hint={sponsorCount ? `${sponsorCount} sponsor logo${sponsorCount === 1 ? "" : "s"} from the Sponsors tab.` : "No sponsors yet. Add them on the Sponsors tab."} />
+          <div>
+            <label className="label">Countdown</label>
+            <select className="input max-w-sm" value={d.countdown} onChange={(e) => set("countdown", e.target.value as Draft["countdown"])}>
+              <option value="none">No countdown</option>
+              <option value="expiry">Until this video expires</option>
+              <option value="fixture">Until the next fixture</option>
+            </select>
+            {d.countdown === "expiry" && !video.live_until && <p className="mt-1 text-xs text-amber-700">Set an expiry time under "When it's live" for this to show.</p>}
+            {d.countdown === "fixture" && !fixtures.length && <p className="mt-1 text-xs text-amber-700">Add an upcoming fixture (and tick "Show upcoming fixtures") for this to show.</p>}
+            {d.countdown === "fixture" && fixtures.length > 0 && !d.show_fixtures && <p className="mt-1 text-xs text-amber-700">Tick "Show upcoming fixtures" for this to show.</p>}
+          </div>
+        </Group>
+
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn-primary" onClick={save} disabled={saving || !dirty}>{saving ? "Saving…" : dirty ? "Save page" : "Saved"}</button>
           {dirty && <button className="text-sm text-zinc-500 hover:text-ink" onClick={() => setD(fromVideo(video))}>Undo changes</button>}
@@ -136,7 +186,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
         <span className="label">Preview (phone)</span>
         <div className="mx-auto h-[620px] w-full max-w-[360px] overflow-auto rounded-[28px] border-[6px] border-zinc-800 shadow-lg">
           <BrandedPage compact brand={brand}>
-            <VideoPageContent compact brand={brand} content={d} video={<VideoPlaceholder />} />
+            <VideoPageContent compact brand={brand} content={previewContent} video={<VideoPlaceholder />} />
           </BrandedPage>
         </div>
         <p className="mt-2 text-center text-xs text-zinc-500">Anything left blank simply isn't shown.</p>
@@ -169,6 +219,20 @@ function IconBtn({ label, disabled, onClick, children }: { label: string; disabl
     <button type="button" aria-label={label} title={label} disabled={disabled} onClick={onClick}
       className="h-7 w-7 rounded font-bold text-zinc-600 hover:bg-white disabled:opacity-30">
       {children}
+    </button>
+  );
+}
+
+function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex w-full items-start gap-3 text-left">
+      <span className={`mt-0.5 h-5 w-8 shrink-0 rounded-full p-0.5 transition ${checked ? "bg-ink" : "bg-zinc-300"}`}>
+        <span className={`block h-4 w-4 rounded-full bg-white shadow transition ${checked ? "translate-x-3" : ""}`} />
+      </span>
+      <span>
+        <span className="block text-sm font-semibold">{label}</span>
+        {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
+      </span>
     </button>
   );
 }

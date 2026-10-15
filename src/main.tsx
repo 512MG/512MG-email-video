@@ -8,6 +8,7 @@ import Orgs from "./pages/Orgs";
 import OrgPage from "./pages/OrgPage";
 import VideoPage from "./pages/VideoPage";
 import Watch from "./pages/Watch";
+import Report from "./pages/Report";
 import { Account, Login, Setup } from "./pages/Auth";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -15,6 +16,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/v/:org/:video" element={<Watch />} />
+        <Route path="/r/:token" element={<Report />} />
         <Route path="*" element={
           <AuthProvider>
             <Routes>

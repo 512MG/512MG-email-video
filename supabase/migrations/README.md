@@ -7,3 +7,4 @@ Migrations applied to the `email-video` project (moumgoefibpwrjyzzpqd), in order
 See the Supabase dashboard (Database → Migrations) for the exact SQL.
 4. `storage_select_policy_and_types` – members can read their org's files (needed for uploads), logo limit 10 MB, AVIF allowed.
 5. `video_body_and_buttons` – per-video `body` (text below the video) and `buttons` (jsonb list). Organisation-level headline/message/button are no longer used.
+6. `fixtures_clicks_sponsors_reports` – corner style, sponsors + report link on organisations; fixtures table; clicks table; per-video fixtures/sponsors/countdown/captions/replace fields; `video_stats_v2` (with clicks) and `click_breakdown`.
