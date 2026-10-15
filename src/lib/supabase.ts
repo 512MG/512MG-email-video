@@ -26,11 +26,15 @@ export type Org = {
   fixture_badge_color: string | null;
   ticket_button_color: string | null;
   card_color: string | null;
+  fixture_size: FixtureSize;
   sponsors: Sponsor[];
   sponsors_title: string;
   report_token: string | null;
   created_at: string;
 };
+
+export type FixtureSize = "small" | "medium" | "large" | "xl";
+export const FIXTURE_SIZES: [FixtureSize, string][] = [["small", "Small"], ["medium", "Medium"], ["large", "Large"], ["xl", "Extra large"]];
 
 export type Sponsor = { name: string; logo_url: string; url: string };
 
@@ -74,6 +78,7 @@ export type Video = {
   captions_status: "generating" | "ready" | "error" | null;
   pending_uid: string | null;
   corner_style: "rounded" | "square" | null;
+  fixture_size: FixtureSize | null;
   created_at: string;
 };
 

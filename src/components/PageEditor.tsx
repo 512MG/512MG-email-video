@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fmtKickoff, joinKickoff, supabase, type Fixture, type Org, type Video } from "../lib/supabase";
 import { BrandedPage, VideoPageContent, VideoPlaceholder, type PageButton } from "./BrandedPage";
+import { SizePicker } from "./BrandEditor";
 
 const MAX_BUTTONS = 6;
 
@@ -9,6 +10,7 @@ type Draft = {
   title: string; headline: string; message: string; body: string; buttons: PageButton[];
   show_fixtures: boolean; fixtures_title: string; show_sponsors: boolean; countdown: "none" | "expiry" | "fixture";
   corner_style: "" | "rounded" | "square";
+  fixture_size: "" | "small" | "medium" | "large" | "xl";
 };
 
 const fromVideo = (v: Video): Draft => ({
@@ -22,6 +24,7 @@ const fromVideo = (v: Video): Draft => ({
   show_sponsors: !!v.show_sponsors,
   countdown: v.countdown ?? "none",
   corner_style: v.corner_style ?? "",
+  fixture_size: v.fixture_size ?? "",
 });
 
 function normaliseUrl(u: string) {
@@ -92,13 +95,15 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
       show_sponsors: d.show_sponsors,
       countdown: d.countdown,
       corner_style: d.corner_style || null,
+      fixture_size: d.fixture_size || null,
     });
     setSaving(false);
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
   };
 
   const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style,
-    fixture_badge_color: org.fixture_badge_color, ticket_button_color: org.ticket_button_color, card_color: org.card_color };
+    fixture_badge_color: org.fixture_badge_color, ticket_button_color: org.ticket_button_color, card_color: org.card_color,
+    fixture_size: d.fixture_size || org.fixture_size || "medium" };
   brand.corner_style = d.corner_style || org.corner_style;
   const previewContent = {
     ...d,
@@ -194,6 +199,11 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
           {d.show_fixtures && (
             <div className="space-y-3 pl-11">
               <input className="input max-w-xs" value={d.fixtures_title} onChange={(e) => set("fixtures_title", e.target.value)} placeholder="Heading: Upcoming fixtures" />
+              <div>
+                <label className="label">Fixture text size</label>
+                <SizePicker value={d.fixture_size} onChange={(v) => set("fixture_size", v)} allowDefault
+                  defaultLabel={`Brand default (${(org.fixture_size ?? "medium") === "xl" ? "extra large" : org.fixture_size ?? "medium"})`} />
+              </div>
               <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
                 <div className="mb-2 flex items-center justify-between text-xs">
                   <span className="font-semibold uppercase tracking-wide text-zinc-500">Fixture list ({fixtures.length} upcoming)</span>

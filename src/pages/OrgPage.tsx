@@ -50,7 +50,7 @@ export default function OrgPage() {
   );
 }
 
-const COPY_FIELDS = ["headline", "message", "body", "buttons", "show_fixtures", "fixtures_title", "show_sponsors", "countdown", "corner_style"] as const;
+const COPY_FIELDS = ["headline", "message", "body", "buttons", "show_fixtures", "fixtures_title", "show_sponsors", "countdown", "corner_style", "fixture_size"] as const;
 
 function VideosTab({ org }: { org: Org }) {
   const [search] = useSearchParams();

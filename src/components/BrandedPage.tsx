@@ -12,6 +12,7 @@ export type Brand = {
   fixture_badge_color?: string | null;
   ticket_button_color?: string | null;
   card_color?: string | null;
+  fixture_size?: "small" | "medium" | "large" | "xl";
 };
 
 export type PageButton = { label: string; url: string; style: "primary" | "secondary"; color?: string | null };
@@ -158,8 +159,19 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
   );
 }
 
+/** Text/box sizes for fixture cards. Previews (compact) step down one size so they fit the phone frame. */
+const FX_SIZES = {
+  small:  { pad: "p-3 sm:p-3.5", gap: "gap-x-4", block: "w-14 py-1.5", day: "text-[10px]", date: "text-xl my-0.5", title: "text-sm", ko: "text-xs", icon: "h-3.5 w-3.5", meta: "text-xs", btn: "px-3 py-2 text-xs", ha: "text-[9px]" },
+  medium: { pad: "p-4 sm:p-5", gap: "gap-x-5", block: "w-[72px] py-2.5", day: "text-[11px]", date: "text-3xl my-1", title: "text-lg", ko: "text-sm", icon: "h-4 w-4", meta: "text-sm", btn: "px-5 py-2.5 text-sm", ha: "text-[10px]" },
+  large:  { pad: "p-5 sm:p-6", gap: "gap-x-6", block: "w-20 py-3", day: "text-xs", date: "text-4xl my-1", title: "text-xl", ko: "text-base", icon: "h-5 w-5", meta: "text-base", btn: "px-6 py-3 text-base", ha: "text-[11px]" },
+  xl:     { pad: "p-6 sm:p-7", gap: "gap-x-7", block: "w-24 py-3.5", day: "text-sm", date: "text-5xl my-1.5", title: "text-2xl", ko: "text-lg", icon: "h-5 w-5", meta: "text-lg", btn: "px-7 py-3.5 text-lg", ha: "text-xs" },
+} as const;
+const STEP_DOWN = { small: "small", medium: "small", large: "medium", xl: "large" } as const;
+
 function FixtureCard({ f, brand, compact, onTrack }: { f: PageFixture; brand: Brand; compact: boolean; onTrack?: TrackFn }) {
   const sq = square(brand);
+  const size = brand.fixture_size ?? "medium";
+  const z = FX_SIZES[compact ? STEP_DOWN[size] : size];
   const d = new Date(f.kickoff);
   const weekday = d.toLocaleDateString("en-GB", { weekday: "short" });
   const ha = f.home_away === "home" ? "H" : f.home_away === "away" ? "A" : null;
@@ -169,27 +181,27 @@ function FixtureCard({ f, brand, compact, onTrack }: { f: PageFixture; brand: Br
   const txt = cardText(brand);
   const time = f.time_tbc ? "TBC" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return (
-    <div className={`flex flex-wrap items-center gap-x-5 gap-y-3 border ${compact ? "p-3" : "p-4 sm:p-5"} ${sq ? "" : "rounded-2xl"}`}
+    <div className={`flex flex-wrap items-center gap-y-3 border ${z.gap} ${z.pad} ${sq ? "" : "rounded-2xl"}`}
       style={{ borderColor: brand.card_color ? brand.card_color : `${brand.text_color}33`, background: cardBg(brand), color: txt }}>
-      <div className={`flex shrink-0 flex-col items-center justify-center text-center ${sq ? "" : "rounded-xl"} ${compact ? "w-14 py-1.5" : "w-[72px] py-2.5"}`} style={{ background: badge, color: readableOn(badge) }}>
-        <span className="text-[11px] font-semibold uppercase tracking-wide">{weekday}</span>
-        <span className={`font-bold leading-none ${compact ? "my-0.5 text-xl" : "my-1 text-3xl"}`}>{d.getDate()}</span>
-        <span className="text-[11px] font-semibold uppercase tracking-wide">{d.toLocaleDateString("en-GB", { month: "short" })}</span>
+      <div className={`flex shrink-0 flex-col items-center justify-center text-center ${sq ? "" : "rounded-xl"} ${z.block}`} style={{ background: badge, color: readableOn(badge) }}>
+        <span className={`${z.day} font-semibold uppercase tracking-wide`}>{weekday}</span>
+        <span className={`font-bold leading-none ${z.date}`}>{d.getDate()}</span>
+        <span className={`${z.day} font-semibold uppercase tracking-wide`}>{d.toLocaleDateString("en-GB", { month: "short" })}</span>
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
-        <div className={`flex items-center gap-2 font-bold ${compact ? "text-sm" : "text-lg"}`}>
-          {ha && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none" style={{ border: "1px solid currentColor", opacity: 0.8 }}>{ha}</span>}
+        <div className={`flex items-center gap-2 font-bold ${z.title}`}>
+          {ha && <span className={`shrink-0 rounded px-1.5 py-0.5 font-bold leading-none ${z.ha}`} style={{ border: "1px solid currentColor", opacity: 0.8 }}>{ha}</span>}
           <span className="break-words">{f.title}</span>
         </div>
-        <div className={`flex items-center gap-1.5 ${compact ? "text-xs" : "text-sm"}`}>
-          <svg viewBox="0 0 24 24" className={`${compact ? "h-3.5 w-3.5" : "h-4 w-4"} shrink-0 opacity-70`} fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+        <div className={`flex items-center gap-1.5 ${z.ko}`}>
+          <svg viewBox="0 0 24 24" className={`${z.icon} shrink-0 opacity-70`} fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
           <span className="font-semibold">Kick-off {time}</span>
         </div>
-        {meta && <div className={`opacity-70 ${compact ? "text-[11px]" : "text-sm"}`}>{meta}</div>}
+        {meta && <div className={`opacity-70 ${z.meta}`}>{meta}</div>}
       </div>
       {f.ticket_url && (
         <a href={f.ticket_url} target="_blank" rel="noopener" onClick={() => onTrack?.("fixture", `Tickets: ${f.title}`, f.ticket_url!)}
-          className={`w-full shrink-0 text-center font-semibold transition hover:brightness-110 ${compact ? "px-3 py-2 text-xs" : "px-5 py-2.5 text-sm sm:w-auto"} ${sq ? "" : "rounded-full"}`}
+          className={`w-full shrink-0 text-center font-semibold transition hover:brightness-110 ${z.btn} ${compact ? "" : "sm:w-auto"} ${sq ? "" : "rounded-full"}`}
           style={{ background: ticket, color: readableOn(ticket) }}>
           Tickets
         </a>

@@ -411,6 +411,7 @@ const actions: Record<string, Handler> = {
       not_live_title: org.not_live_title, not_live_message: org.not_live_message,
       expired_title: org.expired_title, expired_message: org.expired_message,
       corner_style: v?.corner_style || org.corner_style || "rounded",
+      fixture_size: v?.fixture_size || org.fixture_size || "medium",
       fixture_badge_color: hex(org.fixture_badge_color),
       ticket_button_color: hex(org.ticket_button_color),
       card_color: hex(org.card_color),

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { FONTS, supabase, type Org } from "../lib/supabase";
+import { FIXTURE_SIZES, FONTS, supabase, type Org } from "../lib/supabase";
 import { BrandedPage, StateMessage, VideoPageContent, VideoPlaceholder } from "./BrandedPage";
 
 type Draft = Omit<Org, "id" | "created_at" | "slug" | "name">;
@@ -39,7 +39,7 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
   const save = async () => {
     setSaving(true);
     const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font", "corner_style",
-      "fixture_badge_color", "ticket_button_color", "card_color",
+      "fixture_badge_color", "ticket_button_color", "card_color", "fixture_size",
       "not_live_title", "not_live_message", "expired_title", "expired_message"];
     const patch: Record<string, unknown> = {};
     fields.forEach((f) => (patch[f] = typeof d[f] === "string" && (d[f] as string).trim() === "" ? null : d[f]));
@@ -51,7 +51,7 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
   };
 
   const brand = { name: org.name, logo_url: d.logo_url, bg_color: d.bg_color, text_color: d.text_color, accent_color: d.accent_color, font: d.font, corner_style: d.corner_style,
-    fixture_badge_color: d.fixture_badge_color, ticket_button_color: d.ticket_button_color, card_color: d.card_color };
+    fixture_badge_color: d.fixture_badge_color, ticket_button_color: d.ticket_button_color, card_color: d.card_color, fixture_size: d.fixture_size };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -93,7 +93,11 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           </div>
         </Section>
 
-        <Section title="Fixtures & countdown colours" hint="Optional. Leave on “Auto” to match your main colours.">
+        <Section title="Fixtures & countdown" hint="Optional. Leave colours on “Auto” to match your main colours.">
+          <div>
+            <label className="label">Fixture text size (default for all videos)</label>
+            <SizePicker value={d.fixture_size} onChange={(v) => set("fixture_size", v)} />
+          </div>
           <OptionalColour label="Fixture date block" value={d.fixture_badge_color} fallback={d.accent_color} onChange={(v) => set("fixture_badge_color", v)} />
           <OptionalColour label="Tickets buttons" value={d.ticket_button_color} fallback={d.accent_color} onChange={(v) => set("ticket_button_color", v)} />
           <OptionalColour label="Fixture cards & countdown boxes" value={d.card_color} fallback={d.bg_color} onChange={(v) => set("card_color", v)} />
@@ -167,6 +171,20 @@ function OptionalColour({ label, value, fallback, onChange }: { label: string; v
         </div>
         {value && <button type="button" className="text-xs font-semibold text-zinc-500 hover:text-ink" onClick={() => onChange(null)}>Auto</button>}
       </div>
+    </div>
+  );
+}
+export function SizePicker({ value, onChange, allowDefault, defaultLabel }: { value: string; onChange: (v: any) => void; allowDefault?: boolean; defaultLabel?: string }) {
+  const opts: [string, string][] = [...(allowDefault ? [["", defaultLabel ?? "Brand default"] as [string, string]] : []), ...FIXTURE_SIZES];
+  return (
+    <div className="flex flex-wrap gap-1 rounded-lg bg-zinc-100 p-1 text-xs font-semibold">
+      {opts.map(([k, l], i) => (
+        <button key={k} type="button" onClick={() => onChange(k)}
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 ${value === k ? "bg-white shadow-sm" : "text-zinc-500 hover:text-ink"}`}>
+          {k && <span className="font-bold" style={{ fontSize: 9 + (allowDefault ? i - 1 : i) * 2 }}>A</span>}
+          {l}
+        </button>
+      ))}
     </div>
   );
 }
