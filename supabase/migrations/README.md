@@ -13,3 +13,4 @@ See the Supabase dashboard (Database → Migrations) for the exact SQL.
 9. `security_hardening` – least-privilege grants (anon: none; videos insert server-only), two-step verification enforced in RLS (mfa_ok), triggers protecting system columns on videos and org name/slug, fixture text limits.
 10. `lock_down_pg_net` – attempted revoke of pg_net from API roles (grants owned by supabase_admin; schema isn't exposed by the API).
 11. `fixture_text_size` – organisations.fixture_size (default) and videos.fixture_size (override): small / medium / large / xl.
+12. `fixtures_heading_size` – videos.fixtures_title_size: size of the heading above the fixtures list.

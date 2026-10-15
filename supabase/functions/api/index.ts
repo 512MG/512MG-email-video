@@ -451,6 +451,7 @@ const actions: Record<string, Handler> = {
       buttons,
       fixtures,
       fixtures_title: v.fixtures_title || "Upcoming fixtures",
+      fixtures_title_size: ["small", "medium", "large", "xl"].includes(v.fixtures_title_size) ? v.fixtures_title_size : "medium",
       sponsors,
       sponsors_title: org.sponsors_title || "Our partners",
       countdown: v.countdown ?? "none",

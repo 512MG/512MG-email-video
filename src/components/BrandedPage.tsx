@@ -37,6 +37,7 @@ export type PageContent = {
   buttons: PageButton[];
   fixtures?: PageFixture[];
   fixtures_title?: string;
+  fixtures_title_size?: "small" | "medium" | "large" | "xl";
   sponsors?: PageSponsor[];
   sponsors_title?: string;
   countdown?: "none" | "expiry" | "fixture";
@@ -44,6 +45,11 @@ export type PageContent = {
 };
 
 export type TrackFn = (kind: "button" | "fixture" | "sponsor" | "link", label: string, url: string) => void;
+
+const HEADING_SIZES = {
+  full: { small: "text-base", medium: "text-xl", large: "text-2xl sm:text-3xl", xl: "text-3xl sm:text-4xl" },
+  compact: { small: "text-sm", medium: "text-base", large: "text-xl", xl: "text-2xl" },
+} as const;
 
 const square = (b: Brand) => b.corner_style === "square";
 /** Background for fixture cards and countdown tiles. */
@@ -131,7 +137,7 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
 
       {fixtures.length > 0 && (
         <section className={`mx-auto w-full max-w-2xl text-left ${gap}`}>
-          <h2 className={`font-bold ${compact ? "mb-3 text-base" : "mb-4 text-xl"}`}>{content.fixtures_title || "Upcoming fixtures"}</h2>
+          <h2 className={`font-bold leading-tight ${compact ? "mb-3" : "mb-4"} ${HEADING_SIZES[compact ? "compact" : "full"][content.fixtures_title_size ?? "medium"]}`}>{content.fixtures_title || "Upcoming fixtures"}</h2>
           <div className={compact ? "space-y-2.5" : "space-y-4"}>
             {fixtures.map((f) => <FixtureCard key={f.id} f={f} brand={brand} compact={compact} onTrack={onTrack} />)}
           </div>

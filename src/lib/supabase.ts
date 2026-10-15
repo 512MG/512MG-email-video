@@ -79,6 +79,7 @@ export type Video = {
   pending_uid: string | null;
   corner_style: "rounded" | "square" | null;
   fixture_size: FixtureSize | null;
+  fixtures_title_size: FixtureSize;
   created_at: string;
 };
 

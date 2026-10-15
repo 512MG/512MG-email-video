@@ -11,6 +11,7 @@ type Draft = {
   show_fixtures: boolean; fixtures_title: string; show_sponsors: boolean; countdown: "none" | "expiry" | "fixture";
   corner_style: "" | "rounded" | "square";
   fixture_size: "" | "small" | "medium" | "large" | "xl";
+  fixtures_title_size: "small" | "medium" | "large" | "xl";
 };
 
 const fromVideo = (v: Video): Draft => ({
@@ -25,6 +26,7 @@ const fromVideo = (v: Video): Draft => ({
   countdown: v.countdown ?? "none",
   corner_style: v.corner_style ?? "",
   fixture_size: v.fixture_size ?? "",
+  fixtures_title_size: v.fixtures_title_size ?? "medium",
 });
 
 function normaliseUrl(u: string) {
@@ -96,6 +98,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
       countdown: d.countdown,
       corner_style: d.corner_style || null,
       fixture_size: d.fixture_size || null,
+      fixtures_title_size: d.fixtures_title_size,
     });
     setSaving(false);
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
@@ -198,9 +201,16 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
             hint="Shows the next fixtures from this organisation's fixture list. Past ones drop off automatically." />
           {d.show_fixtures && (
             <div className="space-y-3 pl-11">
-              <input className="input max-w-xs" value={d.fixtures_title} onChange={(e) => set("fixtures_title", e.target.value)} placeholder="Heading: Upcoming fixtures" />
               <div>
-                <label className="label">Fixture text size</label>
+                <label className="label">Heading above the fixtures</label>
+                <input className="input max-w-sm" value={d.fixtures_title} onChange={(e) => set("fixtures_title", e.target.value)} placeholder="Upcoming fixtures" />
+              </div>
+              <div>
+                <label className="label">Heading size</label>
+                <SizePicker value={d.fixtures_title_size} onChange={(v) => set("fixtures_title_size", v)} />
+              </div>
+              <div>
+                <label className="label">Fixture card text size</label>
                 <SizePicker value={d.fixture_size} onChange={(v) => set("fixture_size", v)} allowDefault
                   defaultLabel={`Brand default (${(org.fixture_size ?? "medium") === "xl" ? "extra large" : org.fixture_size ?? "medium"})`} />
               </div>
