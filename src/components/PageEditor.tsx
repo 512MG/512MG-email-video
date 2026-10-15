@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { supabase, type Fixture, type Org, type Video } from "../lib/supabase";
+import { Link } from "react-router-dom";
+import { fromLocalInput, supabase, type Fixture, type Org, type Video } from "../lib/supabase";
 import { BrandedPage, VideoPageContent, VideoPlaceholder, type PageButton } from "./BrandedPage";
 
 const MAX_BUTTONS = 6;
@@ -39,11 +40,17 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
   useEffect(() => { setD(fromVideo(video)); }, [video.id]);
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  useEffect(() => {
+  const loadFixtures = () =>
     supabase.from("fixtures").select("*").eq("org_id", org.id)
       .gte("kickoff", new Date(Date.now() - 2 * 3600 * 1000).toISOString())
       .order("kickoff", { ascending: true }).limit(6)
       .then(({ data }) => setFixtures((data as Fixture[]) ?? []));
+  useEffect(() => {
+    loadFixtures();
+    // Pick up fixtures added in another tab/window
+    const onFocus = () => loadFixtures();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [org.id]);
   const sponsorCount = (org.sponsors ?? []).filter((s) => s.logo_url).length;
 
@@ -153,14 +160,36 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
 
         <Group title="Extras">
           <Toggle checked={d.show_fixtures} onChange={(v) => set("show_fixtures", v)} label="Show upcoming fixtures"
-            hint={fixtures.length ? `Shows the next ${Math.min(fixtures.length, 6)} from the Fixtures tab. Past ones drop off automatically.` : "No upcoming fixtures yet. Add them on the Fixtures tab."} />
+            hint="Shows the next fixtures from this organisation's fixture list. Past ones drop off automatically." />
           {d.show_fixtures && (
-            <div className="pl-11">
+            <div className="space-y-3 pl-11">
               <input className="input max-w-xs" value={d.fixtures_title} onChange={(e) => set("fixtures_title", e.target.value)} placeholder="Heading: Upcoming fixtures" />
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <div className="mb-2 flex items-center justify-between text-xs">
+                  <span className="font-semibold uppercase tracking-wide text-zinc-500">Fixture list ({fixtures.length} upcoming)</span>
+                  <Link to={`/o/${org.id}?tab=fixtures`} className="font-semibold text-zinc-600 underline hover:text-ink">Manage all fixtures</Link>
+                </div>
+                {fixtures.length > 0 && (
+                  <ul className="mb-3 space-y-1 text-sm">
+                    {fixtures.map((f) => (
+                      <li key={f.id} className="flex justify-between gap-3">
+                        <span className="truncate font-medium">{f.title}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">{new Date(f.kickoff).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <QuickFixture orgId={org.id} onAdded={loadFixtures} first={fixtures.length === 0} />
+              </div>
             </div>
           )}
           <Toggle checked={d.show_sponsors} onChange={(v) => set("show_sponsors", v)} label="Show sponsors"
-            hint={sponsorCount ? `${sponsorCount} sponsor logo${sponsorCount === 1 ? "" : "s"} from the Sponsors tab.` : "No sponsors yet. Add them on the Sponsors tab."} />
+            hint={sponsorCount ? `${sponsorCount} sponsor logo${sponsorCount === 1 ? "" : "s"} from the Sponsors tab.` : "Shows the sponsor logos from the Sponsors tab."} />
+          {d.show_sponsors && sponsorCount === 0 && (
+            <p className="pl-11 text-xs text-amber-700">
+              No sponsors added yet. <Link to={`/o/${org.id}?tab=sponsors`} className="font-semibold underline">Add sponsors</Link>, then come back. They'll appear straight away.
+            </p>
+          )}
           <div>
             <label className="label">Countdown</label>
             <select className="input max-w-sm" value={d.countdown} onChange={(e) => set("countdown", e.target.value as Draft["countdown"])}>
@@ -187,6 +216,8 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
         <div className="mx-auto h-[620px] w-full max-w-[360px] overflow-auto rounded-[28px] border-[6px] border-zinc-800 shadow-lg">
           <BrandedPage compact brand={brand}>
             <VideoPageContent compact brand={brand} content={previewContent} video={<VideoPlaceholder />} />
+            {d.show_fixtures && fixtures.length === 0 && <PreviewHint text="Your upcoming fixtures will show here. Add one on the left." />}
+            {d.show_sponsors && sponsorCount === 0 && <PreviewHint text="Sponsor logos will show here once added on the Sponsors tab." />}
           </BrandedPage>
         </div>
         <p className="mt-2 text-center text-xs text-zinc-500">Anything left blank simply isn't shown.</p>
@@ -234,5 +265,54 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
         {hint && <span className="block text-xs text-zinc-500">{hint}</span>}
       </span>
     </button>
+  );
+}
+
+function PreviewHint({ text }: { text: string }) {
+  return <div className="mt-4 rounded-lg border-2 border-dashed border-current p-3 text-xs opacity-50">{text}</div>;
+}
+
+/** Add a fixture without leaving the video page. */
+function QuickFixture({ orgId, onAdded, first }: { orgId: string; onAdded: () => void; first: boolean }) {
+  const [open, setOpen] = useState(first);
+  const [when, setWhen] = useState("");
+  const [title, setTitle] = useState("");
+  const [ha, setHa] = useState("");
+  const [tickets, setTickets] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const add = async () => {
+    setErr("");
+    if (!when || !title.trim()) { setErr("Add a date/time and an opponent or event name."); return; }
+    setBusy(true);
+    const t = tickets.trim();
+    const { error } = await supabase.from("fixtures").insert({
+      org_id: orgId, kickoff: fromLocalInput(when), title: title.trim(), home_away: ha || null,
+      ticket_url: t ? (/^https?:\/\//i.test(t) ? t : `https://${t}`) : null,
+    });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    setWhen(""); setTitle(""); setHa(""); setTickets("");
+    onAdded();
+  };
+
+  if (!open) return <button type="button" className="text-sm font-semibold text-ink underline" onClick={() => setOpen(true)}>+ Add a fixture</button>;
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-[180px_1fr_110px]">
+        <input type="datetime-local" className="input" value={when} onChange={(e) => setWhen(e.target.value)} />
+        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Opponent / event, e.g. vs Leeds Rhinos" />
+        <select className="input" value={ha} onChange={(e) => setHa(e.target.value)}>
+          <option value="">Home/away</option><option value="home">Home</option><option value="away">Away</option><option value="neutral">Neutral</option>
+        </select>
+      </div>
+      <input className="input" value={tickets} onChange={(e) => setTickets(e.target.value)} placeholder="Ticket link (optional)" />
+      <div className="flex items-center gap-3">
+        <button type="button" className="btn-primary" disabled={busy} onClick={add}>{busy ? "Adding…" : "Add fixture"}</button>
+        {err && <span className="text-sm text-red-600">{err}</span>}
+      </div>
+      <p className="text-xs text-zinc-500">Fixtures are shared across all of this organisation's videos. Competition and venue can be added under "Manage all fixtures".</p>
+    </div>
   );
 }
