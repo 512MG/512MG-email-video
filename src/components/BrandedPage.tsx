@@ -153,14 +153,14 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
 function FixtureCard({ f, brand, compact, onTrack }: { f: PageFixture; brand: Brand; compact: boolean; onTrack?: TrackFn }) {
   const sq = square(brand);
   const d = new Date(f.kickoff);
-  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const weekday = d.toLocaleDateString("en-GB", { weekday: "short" });
   const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const ha = f.home_away === "home" ? "H" : f.home_away === "away" ? "A" : null;
   const meta = [f.competition, f.venue].filter(Boolean).join(" · ");
   return (
     <div className={`flex items-center gap-3 border p-3 ${sq ? "" : "rounded-xl"}`} style={{ borderColor: `${brand.text_color}33`, background: `${brand.text_color}0d` }}>
       <div className={`flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center ${sq ? "" : "rounded-lg"} ${compact ? "w-14" : "w-16"}`} style={{ background: brand.accent_color, color: readableOn(brand.accent_color) }}>
-        <span className="text-[10px] font-semibold uppercase leading-tight">{day.split(" ")[0]}</span>
+        <span className="text-[10px] font-semibold uppercase leading-tight">{weekday}</span>
         <span className={`font-bold leading-tight ${compact ? "text-lg" : "text-xl"}`}>{d.getDate()}</span>
         <span className="text-[10px] font-semibold uppercase leading-tight">{d.toLocaleDateString("en-GB", { month: "short" })}</span>
       </div>
