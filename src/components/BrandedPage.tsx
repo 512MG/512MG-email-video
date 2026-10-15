@@ -9,13 +9,17 @@ export type Brand = {
   accent_color: string;
   font: string;
   corner_style?: "rounded" | "square";
+  fixture_badge_color?: string | null;
+  ticket_button_color?: string | null;
+  card_color?: string | null;
 };
 
-export type PageButton = { label: string; url: string; style: "primary" | "secondary" };
+export type PageButton = { label: string; url: string; style: "primary" | "secondary"; color?: string | null };
 
 export type PageFixture = {
   id: string;
   kickoff: string;
+  time_tbc?: boolean;
   title: string;
   home_away: "home" | "away" | "neutral" | null;
   competition: string | null;
@@ -41,6 +45,9 @@ export type PageContent = {
 export type TrackFn = (kind: "button" | "fixture" | "sponsor" | "link", label: string, url: string) => void;
 
 const square = (b: Brand) => b.corner_style === "square";
+/** Background for fixture cards and countdown tiles. */
+const cardBg = (b: Brand, alpha = "0d") => b.card_color || `${b.text_color}${alpha}`;
+const cardText = (b: Brand) => (b.card_color ? readableOn(b.card_color) : undefined);
 
 /** The client-branded shell used by the public watch page and the dashboard previews. */
 export function BrandedPage({ brand, children, compact = false }: { brand: Brand; children: ReactNode; compact?: boolean }) {
@@ -77,7 +84,8 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
 
   let countdownTarget: { at: string; label: string } | null = null;
   if (content.countdown === "expiry" && content.live_until) countdownTarget = { at: content.live_until, label: "This message disappears in" };
-  if (content.countdown === "fixture" && fixtures[0]) countdownTarget = { at: fixtures[0].kickoff, label: `${fixtures[0].title} kicks off in` };
+  const nextKnown = fixtures.find((f) => !f.time_tbc);
+  if (content.countdown === "fixture" && nextKnown) countdownTarget = { at: nextKnown.kickoff, label: `${nextKnown.title} kicks off in` };
 
   return (
     <>
@@ -111,8 +119,8 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
               onClick={() => onTrack?.("button", b.label, b.url)}
               className={`${sq ? "rounded-none" : "rounded-full"} px-7 py-3 text-center text-base font-semibold transition hover:brightness-110 sm:min-w-[200px] ${b.style === "primary" ? "shadow-lg" : "border-2"}`}
               style={b.style === "primary"
-                ? { background: brand.accent_color, color: readableOn(brand.accent_color) }
-                : { borderColor: brand.text_color, color: brand.text_color }}
+                ? { background: b.color || brand.accent_color, color: readableOn(b.color || brand.accent_color) }
+                : { borderColor: b.color || brand.text_color, color: b.color || brand.text_color }}
             >
               {b.label}
             </a>
@@ -154,27 +162,31 @@ function FixtureCard({ f, brand, compact, onTrack }: { f: PageFixture; brand: Br
   const sq = square(brand);
   const d = new Date(f.kickoff);
   const weekday = d.toLocaleDateString("en-GB", { weekday: "short" });
-  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const ko = f.time_tbc ? "KO TBC" : `KO ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
   const ha = f.home_away === "home" ? "H" : f.home_away === "away" ? "A" : null;
   const meta = [f.competition, f.venue].filter(Boolean).join(" · ");
+  const badge = brand.fixture_badge_color || brand.accent_color;
+  const ticket = brand.ticket_button_color || brand.accent_color;
+  const txt = cardText(brand);
   return (
-    <div className={`flex items-center gap-3 border p-3 ${sq ? "" : "rounded-xl"}`} style={{ borderColor: `${brand.text_color}33`, background: `${brand.text_color}0d` }}>
-      <div className={`flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center ${sq ? "" : "rounded-lg"} ${compact ? "w-14" : "w-16"}`} style={{ background: brand.accent_color, color: readableOn(brand.accent_color) }}>
+    <div className={`flex items-center gap-3 border p-3 ${sq ? "" : "rounded-xl"}`}
+      style={{ borderColor: brand.card_color ? brand.card_color : `${brand.text_color}33`, background: cardBg(brand), color: txt }}>
+      <div className={`flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center ${sq ? "" : "rounded-lg"} ${compact ? "w-14" : "w-16"}`} style={{ background: badge, color: readableOn(badge) }}>
         <span className="text-[10px] font-semibold uppercase leading-tight">{weekday}</span>
         <span className={`font-bold leading-tight ${compact ? "text-lg" : "text-xl"}`}>{d.getDate()}</span>
         <span className="text-[10px] font-semibold uppercase leading-tight">{d.toLocaleDateString("en-GB", { month: "short" })}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className={`flex items-center gap-2 font-semibold ${compact ? "text-sm" : "text-base"}`}>
-          {ha && <span className="rounded px-1.5 text-[10px] font-bold" style={{ border: `1px solid ${brand.text_color}66` }}>{ha}</span>}
+          {ha && <span className="rounded px-1.5 text-[10px] font-bold" style={{ border: "1px solid currentColor", opacity: 0.8 }}>{ha}</span>}
           <span className="truncate">{f.title}</span>
         </div>
-        <div className="truncate text-xs opacity-70">{time}{meta ? ` · ${meta}` : ""}</div>
+        <div className="truncate text-xs opacity-70"><span className="font-semibold">{ko}</span>{meta ? ` · ${meta}` : ""}</div>
       </div>
       {f.ticket_url && (
         <a href={f.ticket_url} target="_blank" rel="noopener" onClick={() => onTrack?.("fixture", `Tickets: ${f.title}`, f.ticket_url!)}
           className={`shrink-0 px-3 py-2 text-xs font-semibold transition hover:brightness-110 ${sq ? "" : "rounded-full"}`}
-          style={{ background: brand.accent_color, color: readableOn(brand.accent_color) }}>
+          style={{ background: ticket, color: readableOn(ticket) }}>
           Tickets
         </a>
       )}
@@ -195,7 +207,7 @@ function Countdown({ brand, at, label, compact }: { brand: Brand; at: string; la
       <div className="mb-2 text-xs font-semibold uppercase tracking-widest opacity-70">{label}</div>
       <div className="flex justify-center gap-2">
         {shown.map(([n, unit]) => (
-          <div key={unit} className={`min-w-[64px] px-3 py-2 ${square(brand) ? "" : "rounded-xl"}`} style={{ background: `${brand.text_color}14` }}>
+          <div key={unit} className={`min-w-[64px] px-3 py-2 ${square(brand) ? "" : "rounded-xl"}`} style={{ background: cardBg(brand, "14"), color: cardText(brand) }}>
             <div className={`font-bold tabular-nums ${compact ? "text-xl" : "text-3xl"}`}>{String(n).padStart(2, "0")}</div>
             <div className="text-[10px] font-semibold uppercase opacity-60">{unit}</div>
           </div>

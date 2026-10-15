@@ -23,6 +23,9 @@ export type Org = {
   expired_title: string;
   expired_message: string;
   corner_style: "rounded" | "square";
+  fixture_badge_color: string | null;
+  ticket_button_color: string | null;
+  card_color: string | null;
   sponsors: Sponsor[];
   sponsors_title: string;
   report_token: string | null;
@@ -35,6 +38,7 @@ export type Fixture = {
   id: string;
   org_id: string;
   kickoff: string;
+  time_tbc: boolean;
   title: string;
   home_away: "home" | "away" | "neutral" | null;
   competition: string | null;
@@ -58,7 +62,7 @@ export type Video = {
   button_text: string | null;
   button_url: string | null;
   body: string | null;
-  buttons: { label: string; url: string; style: "primary" | "secondary" }[];
+  buttons: { label: string; url: string; style: "primary" | "secondary"; color?: string | null }[];
   live_from: string | null;
   live_until: string | null;
   switched_off: boolean;
@@ -160,6 +164,16 @@ export const toLocalInput = (iso: string | null) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 export const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null);
+
+/** Separate date + kick-off time inputs ⇄ stored timestamp. Blank time = TBC. */
+export const joinKickoff = (date: string, time: string) => new Date(`${date}T${time || "00:00"}`).toISOString();
+export const splitKickoff = (iso: string, tbc: boolean) => {
+  const local = toLocalInput(iso);
+  return { date: local.slice(0, 10), time: tbc ? "" : local.slice(11, 16) };
+};
+export const fmtKickoff = (iso: string, tbc: boolean) =>
+  new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) +
+  (tbc ? " · KO TBC" : ` · KO ${new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`);
 
 export const slugify = (s: string) =>
   s.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fromLocalInput, supabase, type Fixture, type Org, type Video } from "../lib/supabase";
+import { fmtKickoff, joinKickoff, supabase, type Fixture, type Org, type Video } from "../lib/supabase";
 import { BrandedPage, VideoPageContent, VideoPlaceholder, type PageButton } from "./BrandedPage";
 
 const MAX_BUTTONS = 6;
@@ -15,7 +15,7 @@ const fromVideo = (v: Video): Draft => ({
   headline: v.headline ?? "",
   message: v.message ?? "",
   body: v.body ?? "",
-  buttons: (v.buttons ?? []).map((b) => ({ label: b.label ?? "", url: b.url ?? "", style: b.style === "secondary" ? "secondary" : "primary" })),
+  buttons: (v.buttons ?? []).map((b) => ({ label: b.label ?? "", url: b.url ?? "", style: b.style === "secondary" ? "secondary" : "primary", color: b.color ?? null })),
   show_fixtures: !!v.show_fixtures,
   fixtures_title: v.fixtures_title ?? "",
   show_sponsors: !!v.show_sponsors,
@@ -40,11 +40,14 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
   useEffect(() => { setD(fromVideo(video)); }, [video.id]);
 
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
-  const loadFixtures = () =>
-    supabase.from("fixtures").select("*").eq("org_id", org.id)
-      .gte("kickoff", new Date(Date.now() - 2 * 3600 * 1000).toISOString())
-      .order("kickoff", { ascending: true }).limit(6)
-      .then(({ data }) => setFixtures((data as Fixture[]) ?? []));
+  const loadFixtures = () => {
+    const cutoff = Date.now() - 2 * 3600 * 1000;
+    return supabase.from("fixtures").select("*").eq("org_id", org.id)
+      .gte("kickoff", new Date(cutoff - 24 * 3600 * 1000).toISOString())
+      .order("kickoff", { ascending: true }).limit(12)
+      .then(({ data }) => setFixtures(((data as Fixture[]) ?? [])
+        .filter((f) => Date.parse(f.kickoff) + (f.time_tbc ? 24 * 3600 * 1000 : 0) >= cutoff).slice(0, 6)));
+  };
   useEffect(() => {
     loadFixtures();
     // Pick up fixtures added in another tab/window
@@ -59,7 +62,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
 
   const set = <K extends keyof Draft>(k: K, val: Draft[K]) => { setD((p) => ({ ...p, [k]: val })); setErr(""); };
   const setBtn = (i: number, patch: Partial<PageButton>) => set("buttons", d.buttons.map((b, j) => (j === i ? { ...b, ...patch } : b)));
-  const addBtn = () => set("buttons", [...d.buttons, { label: "", url: "", style: d.buttons.length === 0 ? "primary" : "secondary" }]);
+  const addBtn = () => set("buttons", [...d.buttons, { label: "", url: "", style: d.buttons.length === 0 ? "primary" : "secondary", color: null }]);
   const removeBtn = (i: number) => set("buttons", d.buttons.filter((_, j) => j !== i));
   const moveBtn = (i: number, dir: -1 | 1) => {
     const j = i + dir;
@@ -75,7 +78,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
     setSaving(true);
     const buttons = d.buttons
       .filter((b) => b.label.trim() && b.url.trim())
-      .map((b) => ({ label: b.label.trim(), url: normaliseUrl(b.url), style: b.style }));
+      .map((b) => ({ label: b.label.trim(), url: normaliseUrl(b.url), style: b.style, color: b.color || null }));
     const ok = await onSave({
       title: d.title.trim() || video.title,
       headline: d.headline.trim() || null,
@@ -91,7 +94,8 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
   };
 
-  const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style };
+  const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style,
+    fixture_badge_color: org.fixture_badge_color, ticket_button_color: org.ticket_button_color, card_color: org.card_color };
   const previewContent = {
     ...d,
     fixtures: d.show_fixtures ? fixtures : [],
@@ -143,6 +147,13 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
                         </button>
                       ))}
                     </div>
+                    <div className="flex items-center gap-1.5 rounded-md bg-white px-1.5 py-0.5 ring-1 ring-zinc-200">
+                      <input type="color" value={b.color || (b.style === "primary" ? org.accent_color : org.text_color)}
+                        onChange={(e) => setBtn(i, { color: e.target.value })} className="h-6 w-7 cursor-pointer border-0 bg-transparent p-0" title="Button colour" />
+                      {b.color
+                        ? <button type="button" className="font-semibold text-zinc-500 hover:text-ink" onClick={() => setBtn(i, { color: null })}>Reset</button>
+                        : <span className="text-zinc-400">Brand colour</span>}
+                    </div>
                     <div className="ml-auto flex items-center gap-1">
                       <IconBtn label="Move up" disabled={i === 0} onClick={() => moveBtn(i, -1)}>↑</IconBtn>
                       <IconBtn label="Move down" disabled={i === d.buttons.length - 1} onClick={() => moveBtn(i, 1)}>↓</IconBtn>
@@ -174,7 +185,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
                     {fixtures.map((f) => (
                       <li key={f.id} className="flex justify-between gap-3">
                         <span className="truncate font-medium">{f.title}</span>
-                        <span className="shrink-0 text-xs text-zinc-500">{new Date(f.kickoff).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">{fmtKickoff(f.kickoff, f.time_tbc)}</span>
                       </li>
                     ))}
                   </ul>
@@ -275,7 +286,8 @@ function PreviewHint({ text }: { text: string }) {
 /** Add a fixture without leaving the video page. */
 function QuickFixture({ orgId, onAdded, first }: { orgId: string; onAdded: () => void; first: boolean }) {
   const [open, setOpen] = useState(first);
-  const [when, setWhen] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [title, setTitle] = useState("");
   const [ha, setHa] = useState("");
   const [tickets, setTickets] = useState("");
@@ -284,30 +296,34 @@ function QuickFixture({ orgId, onAdded, first }: { orgId: string; onAdded: () =>
 
   const add = async () => {
     setErr("");
-    if (!when || !title.trim()) { setErr("Add a date/time and an opponent or event name."); return; }
+    if (!date || !title.trim()) { setErr("Add a date and an opponent or event name."); return; }
     setBusy(true);
     const t = tickets.trim();
     const { error } = await supabase.from("fixtures").insert({
-      org_id: orgId, kickoff: fromLocalInput(when), title: title.trim(), home_away: ha || null,
+      org_id: orgId, kickoff: joinKickoff(date, time), time_tbc: !time, title: title.trim(), home_away: ha || null,
       ticket_url: t ? (/^https?:\/\//i.test(t) ? t : `https://${t}`) : null,
     });
     setBusy(false);
     if (error) { setErr(error.message); return; }
-    setWhen(""); setTitle(""); setHa(""); setTickets("");
+    setDate(""); setTime(""); setTitle(""); setHa(""); setTickets("");
     onAdded();
   };
 
   if (!open) return <button type="button" className="text-sm font-semibold text-ink underline" onClick={() => setOpen(true)}>+ Add a fixture</button>;
   return (
     <div className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-[180px_1fr_110px]">
-        <input type="datetime-local" className="input" value={when} onChange={(e) => setWhen(e.target.value)} />
-        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Opponent / event, e.g. vs Leeds Rhinos" />
+      <div className="grid gap-2 sm:grid-cols-[150px_120px_1fr]">
+        <div><label className="label">Date</label><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
+        <div><label className="label">Kick-off</label><input type="time" className="input" value={time} onChange={(e) => setTime(e.target.value)} /></div>
+        <div><label className="label">Opponent / event</label><input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. vs Leeds Rhinos" /></div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[150px_1fr]">
         <select className="input" value={ha} onChange={(e) => setHa(e.target.value)}>
           <option value="">Home/away</option><option value="home">Home</option><option value="away">Away</option><option value="neutral">Neutral</option>
         </select>
+        <input className="input" value={tickets} onChange={(e) => setTickets(e.target.value)} placeholder="Ticket link (optional)" />
       </div>
-      <input className="input" value={tickets} onChange={(e) => setTickets(e.target.value)} placeholder="Ticket link (optional)" />
+      <p className="text-xs text-zinc-400">Leave kick-off blank if it's not confirmed yet. It'll show as "KO TBC".</p>
       <div className="flex items-center gap-3">
         <button type="button" className="btn-primary" disabled={busy} onClick={add}>{busy ? "Adding…" : "Add fixture"}</button>
         {err && <span className="text-sm text-red-600">{err}</span>}

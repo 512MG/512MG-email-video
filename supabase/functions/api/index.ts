@@ -55,6 +55,9 @@ function scrub(msg: string) {
   return out.replace(/Bearer\s+\S+/gi, "Bearer [hidden]").replace(/cf[a-z]{2}_[A-Za-z0-9_-]+/g, "[hidden]").slice(0, 300);
 }
 
+/** Accepts only #rrggbb colours. */
+const hex = (c: unknown) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : null);
+
 class HttpError extends Error {
   constructor(msg: string, public status = 400) { super(msg); }
 }
@@ -388,6 +391,9 @@ const actions: Record<string, Handler> = {
       not_live_title: org.not_live_title, not_live_message: org.not_live_message,
       expired_title: org.expired_title, expired_message: org.expired_message,
       corner_style: org.corner_style ?? "rounded",
+      fixture_badge_color: hex(org.fixture_badge_color),
+      ticket_button_color: hex(org.ticket_button_color),
+      card_color: hex(org.card_color),
     };
     if (!v) return json({ state: "not_found", brand });
 
@@ -397,15 +403,19 @@ const actions: Record<string, Handler> = {
       return /^(https?:\/\/|mailto:|tel:)/i.test(s) ? s : null;
     };
     const buttons = (Array.isArray(v.buttons) ? v.buttons : [])
-      .map((b: any) => ({ label: String(b?.label ?? "").trim().slice(0, 60), url: safeUrl(b?.url), style: b?.style === "secondary" ? "secondary" : "primary" }))
+      .map((b: any) => ({ label: String(b?.label ?? "").trim().slice(0, 60), url: safeUrl(b?.url), style: b?.style === "secondary" ? "secondary" : "primary", color: hex(b?.color) }))
       .filter((b: any) => b.label && b.url)
       .slice(0, 8);
     let fixtures: unknown[] = [];
     if (v.show_fixtures) {
-      const { data: fx } = await admin.from("fixtures").select("id, kickoff, title, home_away, competition, venue, ticket_url")
-        .eq("org_id", org.id).gte("kickoff", new Date(Date.now() - 2 * 3600 * 1000).toISOString())
-        .order("kickoff", { ascending: true }).limit(6);
-      fixtures = (fx ?? []).map((f: any) => ({ ...f, ticket_url: safeUrl(f.ticket_url) }));
+      const cutoff = Date.now() - 2 * 3600 * 1000;
+      const { data: fx } = await admin.from("fixtures").select("id, kickoff, time_tbc, title, home_away, competition, venue, ticket_url")
+        .eq("org_id", org.id).gte("kickoff", new Date(cutoff - 24 * 3600 * 1000).toISOString())
+        .order("kickoff", { ascending: true }).limit(12);
+      fixtures = (fx ?? [])
+        .filter((f: any) => Date.parse(f.kickoff) + (f.time_tbc ? 24 * 3600 * 1000 : 0) >= cutoff)
+        .slice(0, 6)
+        .map((f: any) => ({ ...f, ticket_url: safeUrl(f.ticket_url) }));
     }
     const sponsors = v.show_sponsors
       ? (Array.isArray(org.sponsors) ? org.sponsors : [])

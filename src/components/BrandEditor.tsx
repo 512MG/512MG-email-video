@@ -39,6 +39,7 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
   const save = async () => {
     setSaving(true);
     const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font", "corner_style",
+      "fixture_badge_color", "ticket_button_color", "card_color",
       "not_live_title", "not_live_message", "expired_title", "expired_message"];
     const patch: Record<string, unknown> = {};
     fields.forEach((f) => (patch[f] = typeof d[f] === "string" && (d[f] as string).trim() === "" ? null : d[f]));
@@ -49,7 +50,8 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
     if (!error) onSaved();
   };
 
-  const brand = { name: org.name, logo_url: d.logo_url, bg_color: d.bg_color, text_color: d.text_color, accent_color: d.accent_color, font: d.font, corner_style: d.corner_style };
+  const brand = { name: org.name, logo_url: d.logo_url, bg_color: d.bg_color, text_color: d.text_color, accent_color: d.accent_color, font: d.font, corner_style: d.corner_style,
+    fixture_badge_color: d.fixture_badge_color, ticket_button_color: d.ticket_button_color, card_color: d.card_color };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
@@ -89,6 +91,13 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
               ))}
             </div>
           </div>
+        </Section>
+
+        <Section title="Fixtures & countdown colours" hint="Optional. Leave on “Auto” to match your main colours.">
+          <OptionalColour label="Fixture date block" value={d.fixture_badge_color} fallback={d.accent_color} onChange={(v) => set("fixture_badge_color", v)} />
+          <OptionalColour label="Tickets buttons" value={d.ticket_button_color} fallback={d.accent_color} onChange={(v) => set("ticket_button_color", v)} />
+          <OptionalColour label="Fixture cards & countdown boxes" value={d.card_color} fallback={d.bg_color} onChange={(v) => set("card_color", v)} />
+          <p className="text-xs text-zinc-500">Individual page buttons can have their own colour too. Set it per button on each video.</p>
         </Section>
 
         <Section title="When a video isn't available">
@@ -143,6 +152,20 @@ function Colour({ label, value, onChange }: { label: string; value: string; onCh
       <div className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white p-1">
         <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-7 w-8 cursor-pointer rounded border-0 bg-transparent p-0" />
         <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full min-w-0 bg-transparent font-mono text-xs outline-none" />
+      </div>
+    </div>
+  );
+}
+function OptionalColour({ label, value, fallback, onChange }: { label: string; value: string | null; fallback: string; onChange: (v: string | null) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm">{label}</span>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white p-1">
+          <input type="color" value={value || fallback} onChange={(e) => onChange(e.target.value)} className="h-7 w-8 cursor-pointer rounded border-0 bg-transparent p-0" />
+          <span className="w-16 font-mono text-xs">{value || "Auto"}</span>
+        </div>
+        {value && <button type="button" className="text-xs font-semibold text-zinc-500 hover:text-ink" onClick={() => onChange(null)}>Auto</button>}
       </div>
     </div>
   );

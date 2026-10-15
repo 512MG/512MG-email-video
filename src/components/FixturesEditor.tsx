@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { fromLocalInput, supabase, toLocalInput, type Fixture, type Org } from "../lib/supabase";
+import { fmtKickoff, joinKickoff, splitKickoff, supabase, type Fixture, type Org } from "../lib/supabase";
 
-type Draft = { kickoff: string; title: string; home_away: "" | "home" | "away" | "neutral"; competition: string; venue: string; ticket_url: string };
-const empty: Draft = { kickoff: "", title: "", home_away: "", competition: "", venue: "", ticket_url: "" };
+type Draft = { date: string; time: string; title: string; home_away: "" | "home" | "away" | "neutral"; competition: string; venue: string; ticket_url: string };
+const empty: Draft = { date: "", time: "", title: "", home_away: "", competition: "", venue: "", ticket_url: "" };
 
 function normaliseUrl(u: string) {
   const s = u.trim();
@@ -10,8 +10,6 @@ function normaliseUrl(u: string) {
   return /^https?:\/\//i.test(s) ? s : `https://${s}`;
 }
 
-const fmt = (iso: string) =>
-  new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** One shared fixtures list per organisation. Videos choose whether to show the next few. */
 export default function FixturesEditor({ org }: { org: Org }) {
@@ -32,11 +30,12 @@ export default function FixturesEditor({ org }: { org: Org }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!d.kickoff || !d.title.trim()) { setErr("Add a date/time and an opponent or event name."); return; }
+    if (!d.date || !d.title.trim()) { setErr("Add a date and an opponent or event name."); return; }
     setBusy(true);
     const row = {
       org_id: org.id,
-      kickoff: fromLocalInput(d.kickoff),
+      kickoff: joinKickoff(d.date, d.time),
+      time_tbc: !d.time,
       title: d.title.trim(),
       home_away: d.home_away || null,
       competition: d.competition.trim() || null,
@@ -53,7 +52,7 @@ export default function FixturesEditor({ org }: { org: Org }) {
 
   const edit = (f: Fixture) => {
     setEditing(f.id);
-    setD({ kickoff: toLocalInput(f.kickoff), title: f.title, home_away: f.home_away ?? "", competition: f.competition ?? "", venue: f.venue ?? "", ticket_url: f.ticket_url ?? "" });
+    setD({ ...splitKickoff(f.kickoff, f.time_tbc), title: f.title, home_away: f.home_away ?? "", competition: f.competition ?? "", venue: f.venue ?? "", ticket_url: f.ticket_url ?? "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -64,9 +63,10 @@ export default function FixturesEditor({ org }: { org: Org }) {
     load();
   };
 
-  const cutoff = Date.now() - 2 * 3600 * 1000;
-  const upcoming = rows.filter((f) => Date.parse(f.kickoff) >= cutoff);
-  const past = rows.filter((f) => Date.parse(f.kickoff) < cutoff).reverse();
+  const cutoff = Date.now() - 2 * 3600 * 1000; // TBC fixtures are stored at midnight, so treat them as the whole day
+  const isUpcoming = (f: Fixture) => Date.parse(f.kickoff) + (f.time_tbc ? 24 * 3600 * 1000 : 0) >= cutoff;
+  const upcoming = rows.filter(isUpcoming);
+  const past = rows.filter((f) => !isUpcoming(f)).reverse();
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -75,8 +75,9 @@ export default function FixturesEditor({ org }: { org: Org }) {
           <h3 className="font-semibold">{editing ? "Edit fixture" : "Add a fixture"}</h3>
           <p className="text-xs text-zinc-500">One list for the whole organisation. Videos with "Show upcoming fixtures" ticked show the next few automatically, and past fixtures drop off by themselves.</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-[200px_1fr_150px]">
-          <div><label className="label">Date & time</label><input type="datetime-local" className="input" value={d.kickoff} onChange={(e) => set("kickoff", e.target.value)} required /></div>
+        <div className="grid gap-3 sm:grid-cols-[160px_130px_1fr_140px]">
+          <div><label className="label">Date</label><input type="date" className="input" value={d.date} onChange={(e) => set("date", e.target.value)} required /></div>
+          <div><label className="label">Kick-off</label><input type="time" className="input" value={d.time} onChange={(e) => set("time", e.target.value)} /><p className="mt-1 text-xs text-zinc-400">Blank = TBC</p></div>
           <div><label className="label">Opponent / event</label><input className="input" value={d.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. vs Leeds Rhinos" required /></div>
           <div><label className="label">Home / away</label>
             <select className="input" value={d.home_away} onChange={(e) => set("home_away", e.target.value as Draft["home_away"])}>
@@ -121,7 +122,7 @@ function FixtureTable({ title, rows, onEdit, onDelete, empty, muted }: {
           <tbody>
             {rows.map((f) => (
               <tr key={f.id} className="border-t border-zinc-100 first:border-0">
-                <td className="whitespace-nowrap px-4 py-3 text-xs">{fmt(f.kickoff)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-xs">{fmtKickoff(f.kickoff, f.time_tbc)}</td>
                 <td className="px-4 py-3">
                   <div className="font-semibold">{f.title}{f.home_away && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">{f.home_away}</span>}</div>
                   <div className="text-xs text-zinc-500">{[f.competition, f.venue].filter(Boolean).join(" · ")}{f.ticket_url ? " · Tickets link" : ""}</div>
