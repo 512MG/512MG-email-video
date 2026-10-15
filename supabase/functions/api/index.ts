@@ -310,16 +310,24 @@ const actions: Record<string, Handler> = {
       accent_color: org.accent_color, font: org.font,
       not_live_title: org.not_live_title, not_live_message: org.not_live_message,
       expired_title: org.expired_title, expired_message: org.expired_message,
-      button_text: org.button_text, button_url: org.button_url,
     };
     if (!v) return json({ state: "not_found", brand });
 
+    // Each video owns its page content. Blank = not shown.
+    const safeUrl = (u: unknown) => {
+      const s = String(u ?? "").trim();
+      return /^(https?:\/\/|mailto:|tel:)/i.test(s) ? s : null;
+    };
+    const buttons = (Array.isArray(v.buttons) ? v.buttons : [])
+      .map((b: any) => ({ label: String(b?.label ?? "").trim().slice(0, 60), url: safeUrl(b?.url), style: b?.style === "secondary" ? "secondary" : "primary" }))
+      .filter((b: any) => b.label && b.url)
+      .slice(0, 8);
     const page = {
       title: v.title,
-      headline: v.headline ?? org.headline ?? v.title,
-      message: v.message ?? org.message ?? "",
-      button_text: v.button_text ?? org.button_text,
-      button_url: v.button_url ?? org.button_url,
+      headline: v.headline ?? "",
+      message: v.message ?? "",
+      body: v.body ?? "",
+      buttons,
       live_from: v.live_from,
     };
     const now = Date.now();

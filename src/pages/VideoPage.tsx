@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, fmtDate, fmtDuration, fromLocalInput, liveState, supabase, toLocalInput, watchUrl, type Org, type Stat, type Video } from "../lib/supabase";
 import { Badge } from "../components/Badge";
 import EmailImage from "../components/EmailImage";
+import PageEditor from "../components/PageEditor";
 
 type ViewRow = { id: string; started_at: string; seconds_watched: number; max_position: number; completed: boolean; device: string | null };
 
@@ -44,10 +45,11 @@ export default function VideoPage() {
 
   const copy = (text: string, what: string) => { navigator.clipboard.writeText(text); setCopied(what); setTimeout(() => setCopied(""), 1800); };
 
-  const patch = async (p: Partial<Video>, note = "Saved.") => {
+  const patch = async (p: Partial<Video>, note = "Saved."): Promise<boolean> => {
     const { data, error } = await supabase.from("videos").update(p).eq("id", v.id).select("*").single();
-    if (error) { setMsg(error.message); return; }
+    if (error) { setMsg(error.message); return false; }
     setV(data as Video); setMsg(note); setTimeout(() => setMsg(""), 2500);
+    return true;
   };
 
   const del = async () => {
@@ -69,6 +71,10 @@ export default function VideoPage() {
 
       {v.status === "error" && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">This upload failed to process. Delete it and try uploading the file again.</div>}
       {(v.status === "uploading" || v.status === "processing") && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">The video is processing. This usually takes a minute or two. This page updates by itself.</div>}
+
+      <Card title="What viewers see" hint="Text and buttons for this video's page. The logo, colours and font come from the Brand tab.">
+        <PageEditor org={org} video={v} onSave={(p) => patch(p, "Page saved.")} />
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Watch page link">
@@ -108,10 +114,6 @@ export default function VideoPage() {
             <p className="text-xs text-zinc-500">For drag-and-drop editors: add an image block with the image URL and set its link to the watch page link. Or paste the HTML into an HTML block.</p>
           </div>
         )}
-      </Card>
-
-      <Card title="Page text for this video" hint="Leave blank to use the organisation's defaults from the Brand tab.">
-        <PageText v={v} org={org} onSave={(p) => patch(p, "Page text saved.")} />
       </Card>
 
       <Card title="Stats" hint="Only visible here. Nothing is shown to viewers.">
@@ -180,30 +182,6 @@ function TimeWindow({ v, onSave }: { v: Video; onSave: (p: Partial<Video>) => vo
       </div>
       {err && <p className="text-sm text-red-600">{err}</p>}
       <button className="btn-primary" onClick={save}>Save live window</button>
-    </div>
-  );
-}
-
-function PageText({ v, org, onSave }: { v: Video; org: Org; onSave: (p: Partial<Video>) => void }) {
-  const [d, setD] = useState({ title: v.title, headline: v.headline ?? "", message: v.message ?? "", button_text: v.button_text ?? "", button_url: v.button_url ?? "" });
-  const set = (k: keyof typeof d, val: string) => setD((p) => ({ ...p, [k]: val }));
-  const save = () => {
-    let bu = d.button_url.trim();
-    if (bu && !/^https?:\/\//i.test(bu)) bu = `https://${bu}`;
-    onSave({ title: d.title.trim() || v.title, headline: d.headline.trim() || null, message: d.message.trim() || null, button_text: d.button_text.trim() || null, button_url: bu || null });
-  };
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><label className="label">Video name</label><input className="input" value={d.title} onChange={(e) => set("title", e.target.value)} /></div>
-        <div><label className="label">Headline on the page</label><input className="input" value={d.headline} onChange={(e) => set("headline", e.target.value)} placeholder={org.headline ?? v.title} /></div>
-      </div>
-      <div><label className="label">Message</label><textarea className="input" rows={2} value={d.message} onChange={(e) => set("message", e.target.value)} placeholder={org.message ?? ""} /></div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div><label className="label">Button text</label><input className="input" value={d.button_text} onChange={(e) => set("button_text", e.target.value)} placeholder={org.button_text ?? "No button"} /></div>
-        <div><label className="label">Button link</label><input className="input" value={d.button_url} onChange={(e) => set("button_url", e.target.value)} placeholder={org.button_url ?? "https://…"} /></div>
-      </div>
-      <button className="btn-primary" onClick={save}>Save page text</button>
     </div>
   );
 }

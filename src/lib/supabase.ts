@@ -40,6 +40,8 @@ export type Video = {
   message: string | null;
   button_text: string | null;
   button_url: string | null;
+  body: string | null;
+  buttons: { label: string; url: string; style: "primary" | "secondary" }[];
   live_from: string | null;
   live_until: string | null;
   switched_off: boolean;

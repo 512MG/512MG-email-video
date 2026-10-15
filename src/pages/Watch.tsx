@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/supabase";
-import { BrandedPage, StateMessage, type Brand } from "../components/BrandedPage";
+import { BrandedPage, StateMessage, VideoPageContent, type Brand, type PageButton } from "../components/BrandedPage";
 
 type WatchResponse = {
   state: "live" | "not_live" | "expired" | "processing" | "not_found";
@@ -9,7 +9,7 @@ type WatchResponse = {
     not_live_title: string; not_live_message: string;
     expired_title: string; expired_message: string;
   };
-  page?: { title: string; headline: string; message: string; button_text: string | null; button_url: string | null; live_from: string | null };
+  page?: { title: string; headline: string; message: string; body: string; buttons: PageButton[]; live_from: string | null };
   view_id?: string | null;
   player?: { iframe: string; poster: string; duration: number | null };
 };
@@ -35,7 +35,7 @@ export default function Watch() {
     api<WatchResponse>("watch", { org, video, viewer_id: viewerId(), device: device(), preview })
       .then((d) => {
         setData(d);
-        if (d.page?.headline) document.title = d.page.headline;
+        document.title = d.page?.headline || d.brand?.name || "Video";
       })
       .catch(() => setErr(true));
   }, [org, video, preview]);
@@ -45,10 +45,9 @@ export default function Watch() {
   if (!data.brand) return <Plain title="Video not found" message="This link isn't valid." />;
 
   const b = data.brand;
-  const button = { text: data.page?.button_text ?? null, url: data.page?.button_url ?? null };
 
   if (data.state === "not_found") return <BrandedPage brand={b}><StateMessage title="Video not found" message="This link isn't valid." /></BrandedPage>;
-  if (data.state === "expired") return <BrandedPage brand={b} button={button}><StateMessage title={b.expired_title} message={b.expired_message} /></BrandedPage>;
+  if (data.state === "expired") return <BrandedPage brand={b}><StateMessage title={b.expired_title} message={b.expired_message} /></BrandedPage>;
   if (data.state === "not_live")
     return (
       <BrandedPage brand={b}>
@@ -62,14 +61,15 @@ export default function Watch() {
     );
   if (data.state === "processing") return <BrandedPage brand={b}><StateMessage title="Almost ready" message="This video is still being prepared. Try again in a few minutes." /></BrandedPage>;
 
+  const p = data.page!;
   return (
-    <BrandedPage brand={b} button={button}>
+    <BrandedPage brand={b}>
       {preview && <div className="mb-4 inline-block rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-white">Preview – not counted in stats</div>}
-      {data.page?.headline && <h1 className="text-3xl font-bold leading-tight sm:text-4xl">{data.page.headline}</h1>}
-      {data.page?.message && <p className="mx-auto mt-3 max-w-xl whitespace-pre-line text-lg opacity-80">{data.page.message}</p>}
-      <div className="mt-6 overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/10">
-        <Player src={data.player!.iframe} poster={data.player!.poster} viewId={data.view_id ?? null} />
-      </div>
+      <VideoPageContent
+        brand={b}
+        content={{ headline: p.headline, message: p.message, body: p.body, buttons: p.buttons ?? [] }}
+        video={<Player src={data.player!.iframe} poster={data.player!.poster} viewId={data.view_id ?? null} />}
+      />
     </BrandedPage>
   );
 }

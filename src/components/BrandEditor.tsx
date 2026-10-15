@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { FONTS, supabase, type Org } from "../lib/supabase";
-import { BrandedPage, StateMessage } from "./BrandedPage";
+import { BrandedPage, StateMessage, VideoPageContent, VideoPlaceholder } from "./BrandedPage";
 
 type Draft = Omit<Org, "id" | "created_at" | "slug" | "name">;
 
@@ -38,15 +38,14 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
 
   const save = async () => {
     setSaving(true);
-    const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font", "headline", "message", "button_text", "button_url",
+    const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font",
       "not_live_title", "not_live_message", "expired_title", "expired_message"];
     const patch: Record<string, unknown> = {};
     fields.forEach((f) => (patch[f] = typeof d[f] === "string" && (d[f] as string).trim() === "" ? null : d[f]));
     ["not_live_title", "not_live_message", "expired_title", "expired_message"].forEach((f) => { if (patch[f] === null) patch[f] = ""; });
-    if (patch.button_url && !/^https?:\/\//i.test(String(patch.button_url))) patch.button_url = `https://${patch.button_url}`;
     const { error } = await supabase.from("organisations").update(patch).eq("id", org.id);
     setSaving(false);
-    setMsg(error ? error.message : "Saved. Every video page for this organisation now uses this branding.");
+    setMsg(error ? error.message : "Saved. All video pages for this organisation now use this look.");
     if (!error) onSaved();
   };
 
@@ -80,15 +79,6 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           </div>
         </Section>
 
-        <Section title="Default page text" hint="Used on every video unless the video has its own text.">
-          <Field label="Headline (blank = video title)"><input className="input" value={d.headline ?? ""} onChange={(e) => set("headline", e.target.value)} placeholder="Happy birthday from all of us!" /></Field>
-          <Field label="Message under headline"><textarea className="input" rows={2} value={d.message ?? ""} onChange={(e) => set("message", e.target.value)} /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Button text"><input className="input" value={d.button_text ?? ""} onChange={(e) => set("button_text", e.target.value)} placeholder="Book now" /></Field>
-            <Field label="Button link"><input className="input" value={d.button_url ?? ""} onChange={(e) => set("button_url", e.target.value)} placeholder="https://…" /></Field>
-          </div>
-        </Section>
-
         <Section title="When a video isn't available">
           <Field label="Not live yet – title"><input className="input" value={d.not_live_title} onChange={(e) => set("not_live_title", e.target.value)} onFocus={() => setPreviewState("not_live")} /></Field>
           <Field label="Not live yet – message"><input className="input" value={d.not_live_message} onChange={(e) => set("not_live_message", e.target.value)} onFocus={() => setPreviewState("not_live")} /></Field>
@@ -112,17 +102,10 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           </div>
         </div>
         <div className="h-[560px] overflow-auto rounded-xl border border-zinc-200 shadow-sm">
-          <BrandedPage compact brand={brand} button={previewState === "not_live" ? undefined : { text: d.button_text, url: d.button_url || "#" }}>
+          <BrandedPage compact brand={brand}>
             {previewState === "live" && (
-              <>
-                <h1 className="text-2xl font-bold sm:text-3xl">{d.headline || "Your video title"}</h1>
-                {d.message && <p className="mx-auto mt-2 max-w-md whitespace-pre-line opacity-80">{d.message}</p>}
-                <div className="mt-5 flex aspect-video w-full items-center justify-center rounded-2xl bg-black/30 ring-1 ring-black/10">
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90">
-                    <svg viewBox="0 0 24 24" className="ml-1 h-7 w-7 text-black" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                  </span>
-                </div>
-              </>
+              <VideoPageContent compact brand={brand} video={<VideoPlaceholder />}
+                content={{ headline: "Example headline", message: "Each video sets its own text and buttons.", body: "", buttons: [{ label: "Example button", url: "#", style: "primary" }] }} />
             )}
             {previewState === "not_live" && <StateMessage title={d.not_live_title} message={d.not_live_message} />}
             {previewState === "expired" && <StateMessage title={d.expired_title} message={d.expired_message} />}
