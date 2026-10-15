@@ -1,0 +1,11 @@
+/*
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://embed.cloudflarestream.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://moumgoefibpwrjyzzpqd.supabase.co https://*.cloudflarestream.com https://*.videodelivery.net; media-src 'self' blob: https://*.cloudflarestream.com https://*.videodelivery.net; connect-src 'self' https://moumgoefibpwrjyzzpqd.supabase.co wss://moumgoefibpwrjyzzpqd.supabase.co https://*.cloudflarestream.com https://*.videodelivery.net; frame-src https://*.cloudflarestream.com https://*.videodelivery.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

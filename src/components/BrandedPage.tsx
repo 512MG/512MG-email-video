@@ -130,8 +130,8 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
 
       {fixtures.length > 0 && (
         <section className={`mx-auto w-full max-w-2xl text-left ${gap}`}>
-          <h2 className={`mb-3 font-bold ${compact ? "text-base" : "text-xl"}`}>{content.fixtures_title || "Upcoming fixtures"}</h2>
-          <div className="space-y-2">
+          <h2 className={`font-bold ${compact ? "mb-3 text-base" : "mb-4 text-xl"}`}>{content.fixtures_title || "Upcoming fixtures"}</h2>
+          <div className={compact ? "space-y-2.5" : "space-y-4"}>
             {fixtures.map((f) => <FixtureCard key={f.id} f={f} brand={brand} compact={compact} onTrack={onTrack} />)}
           </div>
         </section>
@@ -162,30 +162,34 @@ function FixtureCard({ f, brand, compact, onTrack }: { f: PageFixture; brand: Br
   const sq = square(brand);
   const d = new Date(f.kickoff);
   const weekday = d.toLocaleDateString("en-GB", { weekday: "short" });
-  const ko = f.time_tbc ? "KO TBC" : `KO ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
   const ha = f.home_away === "home" ? "H" : f.home_away === "away" ? "A" : null;
   const meta = [f.competition, f.venue].filter(Boolean).join(" · ");
   const badge = brand.fixture_badge_color || brand.accent_color;
   const ticket = brand.ticket_button_color || brand.accent_color;
   const txt = cardText(brand);
+  const time = f.time_tbc ? "TBC" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return (
-    <div className={`flex items-center gap-3 border p-3 ${sq ? "" : "rounded-xl"}`}
+    <div className={`flex flex-wrap items-center gap-x-5 gap-y-3 border ${compact ? "p-3" : "p-4 sm:p-5"} ${sq ? "" : "rounded-2xl"}`}
       style={{ borderColor: brand.card_color ? brand.card_color : `${brand.text_color}33`, background: cardBg(brand), color: txt }}>
-      <div className={`flex shrink-0 flex-col items-center justify-center px-2 py-1 text-center ${sq ? "" : "rounded-lg"} ${compact ? "w-14" : "w-16"}`} style={{ background: badge, color: readableOn(badge) }}>
-        <span className="text-[10px] font-semibold uppercase leading-tight">{weekday}</span>
-        <span className={`font-bold leading-tight ${compact ? "text-lg" : "text-xl"}`}>{d.getDate()}</span>
-        <span className="text-[10px] font-semibold uppercase leading-tight">{d.toLocaleDateString("en-GB", { month: "short" })}</span>
+      <div className={`flex shrink-0 flex-col items-center justify-center text-center ${sq ? "" : "rounded-xl"} ${compact ? "w-14 py-1.5" : "w-[72px] py-2.5"}`} style={{ background: badge, color: readableOn(badge) }}>
+        <span className="text-[11px] font-semibold uppercase tracking-wide">{weekday}</span>
+        <span className={`font-bold leading-none ${compact ? "my-0.5 text-xl" : "my-1 text-3xl"}`}>{d.getDate()}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide">{d.toLocaleDateString("en-GB", { month: "short" })}</span>
       </div>
-      <div className="min-w-0 flex-1">
-        <div className={`flex items-center gap-2 font-semibold ${compact ? "text-sm" : "text-base"}`}>
-          {ha && <span className="rounded px-1.5 text-[10px] font-bold" style={{ border: "1px solid currentColor", opacity: 0.8 }}>{ha}</span>}
-          <span className="truncate">{f.title}</span>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className={`flex items-center gap-2 font-bold ${compact ? "text-sm" : "text-lg"}`}>
+          {ha && <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none" style={{ border: "1px solid currentColor", opacity: 0.8 }}>{ha}</span>}
+          <span className="break-words">{f.title}</span>
         </div>
-        <div className="truncate text-xs opacity-70"><span className="font-semibold">{ko}</span>{meta ? ` · ${meta}` : ""}</div>
+        <div className={`flex items-center gap-1.5 ${compact ? "text-xs" : "text-sm"}`}>
+          <svg viewBox="0 0 24 24" className={`${compact ? "h-3.5 w-3.5" : "h-4 w-4"} shrink-0 opacity-70`} fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+          <span className="font-semibold">Kick-off {time}</span>
+        </div>
+        {meta && <div className={`opacity-70 ${compact ? "text-[11px]" : "text-sm"}`}>{meta}</div>}
       </div>
       {f.ticket_url && (
         <a href={f.ticket_url} target="_blank" rel="noopener" onClick={() => onTrack?.("fixture", `Tickets: ${f.title}`, f.ticket_url!)}
-          className={`shrink-0 px-3 py-2 text-xs font-semibold transition hover:brightness-110 ${sq ? "" : "rounded-full"}`}
+          className={`w-full shrink-0 text-center font-semibold transition hover:brightness-110 ${compact ? "px-3 py-2 text-xs" : "px-5 py-2.5 text-sm sm:w-auto"} ${sq ? "" : "rounded-full"}`}
           style={{ background: ticket, color: readableOn(ticket) }}>
           Tickets
         </a>

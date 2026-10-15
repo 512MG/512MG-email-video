@@ -3,9 +3,10 @@ import { useAuth } from "../lib/auth";
 import { supabase } from "../lib/supabase";
 
 export default function Layout() {
-  const { session, loading, isAdmin } = useAuth();
+  const { session, loading, isAdmin, needsMfa } = useAuth();
   if (loading) return <div className="min-h-screen bg-zinc-50" />;
   if (!session) return <Navigate to="/login" replace />;
+  if (needsMfa) return <Navigate to="/verify" replace />;
   return (
     <div className="min-h-screen bg-zinc-50 text-ink">
       <header className="border-b border-zinc-200 bg-white">

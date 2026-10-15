@@ -9,7 +9,7 @@ import OrgPage from "./pages/OrgPage";
 import VideoPage from "./pages/VideoPage";
 import Watch from "./pages/Watch";
 import Report from "./pages/Report";
-import { Account, Login, Setup } from "./pages/Auth";
+import { Account, Login, Setup, Verify } from "./pages/Auth";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -22,6 +22,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/setup" element={<Setup />} />
+              <Route path="/verify" element={<Verify />} />
               <Route element={<Layout />}>
                 <Route index element={<Orgs />} />
                 <Route path="/o/:orgId" element={<OrgPage />} />

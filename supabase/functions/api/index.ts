@@ -5,14 +5,27 @@
 // Secrets needed (Supabase → Edge Functions → Secrets): CF_ACCOUNT_ID, CF_STREAM_TOKEN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// Only our own site may call this from a browser. Add custom domains via the ALLOWED_ORIGINS secret (comma separated).
+const ALLOWED_ORIGINS = new Set(
+  ["https://512mg-email-video.barkery.workers.dev", "http://localhost:5173",
+   ...(Deno.env.get("ALLOWED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean)],
+);
+function corsFor(req: Request) {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowed = ALLOWED_ORIGINS.has(origin) || /^https:\/\/[a-z0-9-]+\.512mg-email-video\.barkery\.workers\.dev$/.test(origin);
+  return {
+    "Access-Control-Allow-Origin": allowed ? origin : "https://512mg-email-video.barkery.workers.dev",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+  };
+}
 
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const fail = (msg: string, status = 400) => json({ error: msg }, status);
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
@@ -103,6 +116,13 @@ async function currentUser(req: Request) {
   if (!token) throw new HttpError("Please sign in.", 401);
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) throw new HttpError("Please sign in.", 401);
+  // Two-step verification: if the user has set it up, the session must have completed it (AAL2)
+  const verified = (data.user.factors ?? []).some((f: any) => f.status === "verified");
+  if (verified) {
+    let aal = "aal1";
+    try { aal = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).aal ?? "aal1"; } catch { /* treat as aal1 */ }
+    if (aal !== "aal2") throw new HttpError("Please complete two-step verification.", 401);
+  }
   return data.user;
 }
 
@@ -126,7 +146,7 @@ async function videoForUser(userId: string, videoId: string) {
 
 function randomPassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(14));
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
@@ -227,7 +247,7 @@ const actions: Record<string, Handler> = {
     if (!code || String(body.code ?? "").trim().toUpperCase() !== code.value) return fail("That setup code isn't right.", 403);
     const email = String(body.email ?? "").trim();
     const password = String(body.password ?? "");
-    if (!email.includes("@") || password.length < 8) return fail("Enter an email and a password of at least 8 characters.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) return fail("Enter a valid email and a password of at least 12 characters.");
     let user = await findUserByEmail(email);
     if (!user) {
       const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
@@ -248,7 +268,7 @@ const actions: Record<string, Handler> = {
     const orgId = body.org_id ? String(body.org_id) : null;
     const role = body.role === "owner" ? "owner" : "member";
     const makeAdmin = body.agency_admin === true;
-    if (!email.includes("@")) return fail("Enter a valid email.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter a valid email.");
     let user = await findUserByEmail(email);
     let password: string | null = null;
     if (!user) {
@@ -354,7 +374,7 @@ const actions: Record<string, Handler> = {
     const token = await playbackToken(v.stream_uid, Math.floor(Date.now() / 1000) + 600);
     const res = await fetch(`https://${v.playback_host}/${token}/thumbnails/thumbnail.jpg?time=${t}s&height=720`);
     if (!res.ok) return fail("Couldn't fetch a frame from the video.", 502);
-    return new Response(res.body, { headers: { ...CORS, "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
+    return new Response(res.body, { headers: { "Content-Type": "image/jpeg" } });
   },
 
   async delete_video(req, body) {
@@ -390,7 +410,7 @@ const actions: Record<string, Handler> = {
       accent_color: org.accent_color, font: org.font,
       not_live_title: org.not_live_title, not_live_message: org.not_live_message,
       expired_title: org.expired_title, expired_message: org.expired_message,
-      corner_style: org.corner_style ?? "rounded",
+      corner_style: v?.corner_style || org.corner_style || "rounded",
       fixture_badge_color: hex(org.fixture_badge_color),
       ticket_button_color: hex(org.ticket_button_color),
       card_color: hex(org.card_color),
@@ -461,8 +481,15 @@ const actions: Record<string, Handler> = {
 
     let viewId: string | null = null;
     if (!preview) {
-      viewId = crypto.randomUUID();
-      await admin.from("views").insert({ id: viewId, video_id: v.id, viewer_id: viewerId, device: String(body.device ?? "").slice(0, 20) || null });
+      // Same viewer re-opening within 30 minutes counts as the same view
+      const { data: recent } = await admin.from("views").select("id").eq("video_id", v.id).eq("viewer_id", viewerId)
+        .gte("started_at", new Date(now - 30 * 60 * 1000).toISOString()).order("started_at", { ascending: false }).limit(1).maybeSingle();
+      if (recent && viewerId !== "anon") {
+        viewId = recent.id;
+      } else {
+        viewId = crypto.randomUUID();
+        await admin.from("views").insert({ id: viewId, video_id: v.id, viewer_id: viewerId, device: String(body.device ?? "").slice(0, 20) || null });
+      }
     }
     return json({
       state, brand, page, view_id: viewId, vid: v.id,
@@ -546,11 +573,14 @@ const actions: Record<string, Handler> = {
   },
 };
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+async function handle(req: Request): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok");
   if (req.method !== "POST") return fail("Use POST", 405);
+  const raw = await req.text();
+  if (raw.length > 20_000) return fail("Request too large", 413);
   let body: any = {};
-  try { body = await req.json(); } catch { /* empty */ }
+  try { body = JSON.parse(raw || "{}"); } catch { /* empty */ }
+  if (typeof body !== "object" || body === null) body = {};
   const fn = actions[String(body.action ?? "")];
   if (!fn) return fail("Unknown action", 404);
   try {
@@ -560,4 +590,10 @@ Deno.serve(async (req) => {
     console.error(e);
     return fail("Something went wrong.", 500);
   }
+}
+
+Deno.serve(async (req) => {
+  const res = await handle(req);
+  for (const [k, v] of Object.entries(corsFor(req))) res.headers.set(k, v);
+  return res;
 });

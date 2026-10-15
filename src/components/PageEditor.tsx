@@ -8,6 +8,7 @@ const MAX_BUTTONS = 6;
 type Draft = {
   title: string; headline: string; message: string; body: string; buttons: PageButton[];
   show_fixtures: boolean; fixtures_title: string; show_sponsors: boolean; countdown: "none" | "expiry" | "fixture";
+  corner_style: "" | "rounded" | "square";
 };
 
 const fromVideo = (v: Video): Draft => ({
@@ -20,6 +21,7 @@ const fromVideo = (v: Video): Draft => ({
   fixtures_title: v.fixtures_title ?? "",
   show_sponsors: !!v.show_sponsors,
   countdown: v.countdown ?? "none",
+  corner_style: v.corner_style ?? "",
 });
 
 function normaliseUrl(u: string) {
@@ -89,6 +91,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
       fixtures_title: d.fixtures_title.trim() || null,
       show_sponsors: d.show_sponsors,
       countdown: d.countdown,
+      corner_style: d.corner_style || null,
     });
     setSaving(false);
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
@@ -96,6 +99,7 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
 
   const brand = { name: org.name, logo_url: org.logo_url, bg_color: org.bg_color, text_color: org.text_color, accent_color: org.accent_color, font: org.font, corner_style: org.corner_style,
     fixture_badge_color: org.fixture_badge_color, ticket_button_color: org.ticket_button_color, card_color: org.card_color };
+  brand.corner_style = d.corner_style || org.corner_style;
   const previewContent = {
     ...d,
     fixtures: d.show_fixtures ? fixtures : [],
@@ -111,6 +115,21 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
           <label className="label">Video name <span className="normal-case text-zinc-400">(dashboard only)</span></label>
           <input className="input" value={d.title} onChange={(e) => set("title", e.target.value)} />
         </div>
+
+        <Group title="Video">
+          <div>
+            <label className="label">Video & button corners</label>
+            <div className="grid max-w-md grid-cols-3 gap-2">
+              {([["", `Brand default (${org.corner_style === "square" ? "square" : "rounded"})`], ["rounded", "Rounded"], ["square", "Square"]] as const).map(([k, l]) => (
+                <button key={k} type="button" onClick={() => set("corner_style", k)}
+                  className={`flex flex-col items-center gap-1.5 rounded-lg border p-2 text-xs font-semibold ${d.corner_style === k ? "border-ink bg-zinc-50 text-ink" : "border-zinc-200 text-zinc-500 hover:border-zinc-400"}`}>
+                  <span className={`h-6 w-10 border-2 border-current ${(k || org.corner_style) === "square" ? "" : "rounded-md"}`} />
+                  <span className="text-center leading-tight">{l}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </Group>
 
         <Group title="Above the video">
           <Field label="Headline" hint="Optional">

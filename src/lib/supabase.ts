@@ -73,6 +73,7 @@ export type Video = {
   captions: boolean;
   captions_status: "generating" | "ready" | "error" | null;
   pending_uid: string | null;
+  corner_style: "rounded" | "square" | null;
   created_at: string;
 };
 
