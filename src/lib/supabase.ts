@@ -143,6 +143,15 @@ export function randomToken(len = 32) {
   return Array.from(crypto.getRandomValues(new Uint8Array(len)), (b) => chars[b % chars.length]).join("");
 }
 
+/** Supabase image addresses → the site's cached /img/ address (served via Cloudflare, saves Supabase bandwidth). */
+const STORAGE_PUBLIC = `${SUPABASE_URL}/storage/v1/object/public/`;
+export const cdnImg = <T extends string | null | undefined>(u: T): T => {
+  if (!u || !u.startsWith(STORAGE_PUBLIC)) return u;
+  const rest = u.slice(STORAGE_PUBLIC.length).split("?")[0];
+  if (!/^(brand|email-images)\//.test(rest)) return u;
+  return `${window.location.origin}/img/${rest}` as T;
+};
+
 export const watchUrl = (orgSlug: string, videoSlug: string) => `${window.location.origin}/v/${orgSlug}/${videoSlug}`;
 
 export function liveState(v: Video): { label: string; tone: "green" | "amber" | "zinc" | "red" } {

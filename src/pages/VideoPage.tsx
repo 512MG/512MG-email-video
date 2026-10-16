@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, downloadCsv, fmtDate, fmtDuration, fromLocalInput, liveState, supabase, toLocalInput, watchUrl, type Org, type Stat, type Video } from "../lib/supabase";
+import { api, cdnImg, downloadCsv, fmtDate, fmtDuration, fromLocalInput, liveState, supabase, toLocalInput, watchUrl, type Org, type Stat, type Video } from "../lib/supabase";
 import { Badge } from "../components/Badge";
 import EmailImage from "../components/EmailImage";
 import PageEditor from "../components/PageEditor";
@@ -46,7 +46,7 @@ export default function VideoPage() {
   const url = watchUrl(org.slug, v.slug);
   const state = liveState(v);
   const snippet = v.email_image_url
-    ? `<a href="${url}" target="_blank" style="text-decoration:none;"><img src="${v.email_image_url}" width="600" alt="Click to watch: ${v.title.replace(/"/g, "&quot;")}" style="display:block;width:100%;max-width:600px;height:auto;border:0;" /></a>`
+    ? `<a href="${url}" target="_blank" style="text-decoration:none;"><img src="${cdnImg(v.email_image_url)}" width="600" alt="Click to watch: ${v.title.replace(/"/g, "&quot;")}" style="display:block;width:100%;max-width:600px;height:auto;border:0;" /></a>`
     : "";
 
   const copy = (text: string, what: string) => { navigator.clipboard.writeText(text); setCopied(what); setTimeout(() => setCopied(""), 1800); };
@@ -118,7 +118,7 @@ export default function VideoPage() {
           <div className="space-y-2 border-t border-zinc-100 pt-4">
             <div className="flex flex-wrap gap-2">
               <button className="btn-ghost" onClick={() => copy(snippet, "html")}>{copied === "html" ? "Copied" : "Copy email HTML"}</button>
-              <button className="btn-ghost" onClick={() => copy(v.email_image_url!, "img")}>{copied === "img" ? "Copied" : "Copy image URL"}</button>
+              <button className="btn-ghost" onClick={() => copy(cdnImg(v.email_image_url!), "img")}>{copied === "img" ? "Copied" : "Copy image URL"}</button>
               <a className="btn-ghost" href={v.email_image_url} target="_blank" rel="noopener" download>Download image</a>
             </div>
             <p className="text-xs text-zinc-500">For drag-and-drop editors: add an image block with the image URL and set its link to the watch page link. Or paste the HTML into an HTML block.</p>

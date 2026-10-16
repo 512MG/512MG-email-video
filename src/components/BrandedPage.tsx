@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { loadFont } from "../lib/supabase";
+import { cdnImg, loadFont } from "../lib/supabase";
 
 export type Brand = {
   name: string;
@@ -54,7 +54,7 @@ function PageImage({ src, alt, link, brand, compact, onTrack, trackLabel }: {
   src: string; alt: string; link?: string | null; brand: Brand; compact: boolean; onTrack?: TrackFn; trackLabel: string;
 }) {
   const img = (
-    <img src={src} alt={alt} loading="lazy" decoding="async"
+    <img src={cdnImg(src)} alt={alt} loading="lazy" decoding="async"
       className={`block h-auto w-full shadow-xl ring-1 ring-black/10 ${brand.corner_style === "square" ? "" : "rounded-2xl"}`} />
   );
   return (
@@ -86,7 +86,7 @@ export function BrandedPage({ brand, children, compact = false }: { brand: Brand
     >
       <header className={`flex items-center justify-center ${compact ? "mb-4 h-10" : "mb-5 h-12 sm:mb-8 sm:h-14"}`}>
         {brand.logo_url ? (
-          <img src={brand.logo_url} alt={brand.name} className="h-full max-w-[220px] object-contain" />
+          <img src={cdnImg(brand.logo_url)} alt={brand.name} className="h-full max-w-[220px] object-contain" />
         ) : (
           <span className="text-xl font-bold tracking-tight">{brand.name}</span>
         )}
@@ -185,7 +185,7 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
             {sponsors.map((s, i) => {
               const img = (
                 <span className={`flex h-16 w-32 items-center justify-center bg-white p-2 ${sq ? "" : "rounded-xl"} ${compact ? "h-12 w-24" : ""}`}>
-                  <img src={s.logo_url!} alt={s.name} className="max-h-full max-w-full object-contain" />
+                  <img src={cdnImg(s.logo_url!)} alt={s.name} className="max-h-full max-w-full object-contain" />
                 </span>
               );
               return s.url ? (
