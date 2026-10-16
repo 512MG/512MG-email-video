@@ -1,7 +1,7 @@
 // Email Video API: one function, many actions.
-// Public actions: setup_status, setup (first admin only), watch, progress, click, report.
+// Public actions: setup_status, setup (first admin only), watch, progress, click, report, maintenance.
 // Signed-in actions: create_upload, cancel_replace, captions, refresh_video, thumbnail, delete_video,
-//                    create_user, remove_member, reset_password.
+//                    create_user, remove_member, reset_password, backup_status, backup_download.
 // Secrets needed (Supabase → Edge Functions → Secrets): CF_ACCOUNT_ID, CF_STREAM_TOKEN.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -213,10 +213,69 @@ async function syncFromStream(v: Record<string, any>) {
   return v;
 }
 
+// ---------- backups ----------
+const BACKUP_TABLES = ["organisations", "memberships", "agency_admins", "videos", "fixtures", "views", "clicks"];
+const KEEP_BACKUPS = 8;
+
+async function makeBackup() {
+  const tables: Record<string, unknown[]> = {};
+  for (const t of BACKUP_TABLES) {
+    const rows: unknown[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await admin.from(t).select("*").range(from, from + 999);
+      if (error) throw new HttpError(`Backup failed reading ${t}: ${error.message}`, 500);
+      rows.push(...(data ?? []));
+      if (!data || data.length < 1000) break;
+    }
+    tables[t] = rows;
+  }
+  const counts = Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, v.length]));
+  return { created_at: new Date().toISOString(), version: 1, counts, tables };
+}
+
+async function storeBackup() {
+  const b = await makeBackup();
+  const name = `backup-${b.created_at.slice(0, 10)}-${Date.now()}.json`;
+  const { error } = await admin.storage.from("backups").upload(name, new Blob([JSON.stringify(b)], { type: "application/json" }), { contentType: "application/json" });
+  if (error) throw new HttpError(`Backup failed saving: ${error.message}`, 500);
+  const { data: files } = await admin.storage.from("backups").list("", { limit: 100, sortBy: { column: "name", order: "desc" } });
+  const old = (files ?? []).map((f) => f.name).filter((n) => n.startsWith("backup-")).sort().reverse().slice(KEEP_BACKUPS);
+  if (old.length) await admin.storage.from("backups").remove(old);
+  await admin.from("app_settings").upsert({ key: "last_backup", value: b.created_at });
+  return { name, counts: b.counts };
+}
+
 // ---------- actions ----------
 type Handler = (req: Request, body: any) => Promise<Response>;
 
 const actions: Record<string, Handler> = {
+  // Called by the site's scheduled job (Mon/Wed/Fri). Keeps the database awake and makes a backup once a week.
+  // Safe to be public: it returns nothing sensitive and backs up at most once every 6 days.
+  async maintenance() {
+    const { data: last } = await admin.from("app_settings").select("value").eq("key", "last_backup").maybeSingle();
+    const due = !last || Date.now() - Date.parse(last.value) > 6 * 24 * 3600 * 1000;
+    if (due) await storeBackup();
+    return json({ ok: true, backed_up: due });
+  },
+
+  async backup_status(req) {
+    const me = await currentUser(req);
+    if (!(await isAgencyAdmin(me.id))) return fail("Only agency admins can see backups.", 403);
+    const { data: last } = await admin.from("app_settings").select("value").eq("key", "last_backup").maybeSingle();
+    const { data: files } = await admin.storage.from("backups").list("", { limit: 100, sortBy: { column: "name", order: "desc" } });
+    return json({ last_backup: last?.value ?? null, kept: (files ?? []).filter((f) => f.name.startsWith("backup-")).length });
+  },
+
+  // A fresh full backup, downloaded straight to the admin's computer
+  async backup_download(req) {
+    const me = await currentUser(req);
+    if (!(await isAgencyAdmin(me.id))) return fail("Only agency admins can download backups.", 403);
+    const b = await makeBackup();
+    return new Response(JSON.stringify(b, null, 1), {
+      headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="email-video-backup-${b.created_at.slice(0, 10)}.json"` },
+    });
+  },
+
   async setup_status() {
     const { count } = await admin.from("agency_admins").select("user_id", { count: "exact", head: true });
     return json({ needsSetup: (count ?? 0) === 0, streamConnected: !!(CF_ACCOUNT && CF_TOKEN) });

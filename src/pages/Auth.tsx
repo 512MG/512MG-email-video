@@ -160,7 +160,7 @@ export function Setup() {
 }
 
 export function Account() {
-  const { session } = useAuth();
+  const { session, isAdmin } = useAuth();
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -192,6 +192,7 @@ export function Account() {
         </form>
       </div>
       <TwoStep />
+      {isAdmin && <Backups />}
     </div>
   );
 }
@@ -274,6 +275,44 @@ function TwoStep() {
         <button className="btn-primary" disabled={busy} onClick={start}>Set up two-step verification</button>
       )}
       {msg && <p className="text-sm text-zinc-600">{msg}</p>}
+    </div>
+  );
+}
+
+/** Admin only: automatic backup status and a download button. */
+function Backups() {
+  const [status, setStatus] = useState<{ last_backup: string | null; kept: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => { api<{ last_backup: string | null; kept: number }>("backup_status").then(setStatus).catch((e) => setErr(e.message)); }, []);
+
+  const download = async () => {
+    setBusy(true); setErr("");
+    try {
+      const blob = await api<Blob>("backup_download");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `email-video-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-semibold">Backups</h2>
+        <p className="text-xs text-zinc-500">A full copy of organisations, branding, video page settings, fixtures, stats and client logins is saved automatically once a week (the last 8 are kept). The videos themselves are stored separately on Cloudflare.</p>
+      </div>
+      <p className="text-sm">
+        Last automatic backup:{" "}
+        <strong>{status ? (status.last_backup ? new Date(status.last_backup).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "not yet, the first runs on the next Mon/Wed/Fri") : "…"}</strong>
+        {status && status.kept > 0 && <span className="text-zinc-500"> · {status.kept} kept</span>}
+      </p>
+      <button className="btn-ghost" disabled={busy} onClick={download}>{busy ? "Preparing…" : "Download a backup now"}</button>
+      <p className="text-xs text-zinc-500">Tip: download one every month or so and keep it somewhere safe (e.g. your Google Drive) as an off-site copy.</p>
+      {err && <p className="text-sm text-red-600">{err}</p>}
     </div>
   );
 }

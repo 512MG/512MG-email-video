@@ -104,7 +104,7 @@ export async function api<T = any>(action: string, body: Record<string, unknown>
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
     body: JSON.stringify({ action, ...body }),
   });
-  if (action === "thumbnail" && res.ok) return (await res.blob()) as T;
+  if ((action === "thumbnail" || action === "backup_download") && res.ok) return (await res.blob()) as T;
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
   return json as T;

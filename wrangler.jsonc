@@ -1,11 +1,15 @@
 {
-  // Static site on Cloudflare (Workers Builds runs `npx wrangler deploy` after `npm run build`).
+  // Static site + a tiny Worker for the scheduled keep-awake/backup job.
   "name": "512mg-email-video",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "preview_urls": true,
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
-  }
+  },
+  // Mon, Wed, Fri at 06:17 UTC
+  "triggers": { "crons": ["17 6 * * 1,3,5"] }
 }

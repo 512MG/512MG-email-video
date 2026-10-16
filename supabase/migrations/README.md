@@ -14,3 +14,4 @@ See the Supabase dashboard (Database → Migrations) for the exact SQL.
 10. `lock_down_pg_net` – attempted revoke of pg_net from API roles (grants owned by supabase_admin; schema isn't exposed by the API).
 11. `fixture_text_size` – organisations.fixture_size (default) and videos.fixture_size (override): small / medium / large / xl.
 12. `fixtures_heading_size` – videos.fixtures_title_size: size of the heading above the fixtures list.
+13. `backups_bucket` – private storage bucket for weekly JSON backups (server-only). Scheduled by the Worker cron in `worker/index.ts` (Mon/Wed/Fri 06:17 UTC → `maintenance` action: keeps the DB awake, backs up once every 6+ days, keeps 8).
