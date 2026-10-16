@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { slugify, supabase, type Org } from "../lib/supabase";
+import { api, slugify, supabase, type Org } from "../lib/supabase";
 import { useAuth } from "../lib/auth";
+import { PRODUCT, TRIAL } from "../product";
 
 export default function Orgs() {
   const { isAdmin } = useAuth();
@@ -25,12 +26,13 @@ export default function Orgs() {
 
   if (orgs === null) return null;
   if (!isAdmin && orgs.length === 1) return <Navigate to={`/o/${orgs[0].id}`} replace />;
+  if (!isAdmin && orgs.length === 0) return <CreateWorkspace onCreated={load} />;
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setErr("");
     const s = slugify(slug || name);
-    const { error } = await supabase.from("organisations").insert({ name: name.trim(), slug: s });
+    const { error } = await supabase.from("organisations").insert({ name: name.trim(), slug: s, plan: "agency" });
     if (error) { setErr(error.message.includes("duplicate") ? "That web address is already taken." : error.message); return; }
     setName(""); setSlug(""); setSlugTouched(false); setOpen(false);
     load();
@@ -77,11 +79,50 @@ export default function Orgs() {
               <div className="min-w-0">
                 <div className="truncate font-semibold group-hover:underline">{o.name}</div>
                 <div className="text-xs text-zinc-500">/v/{o.slug} · {counts[o.id] ?? 0} video{(counts[o.id] ?? 0) === 1 ? "" : "s"}</div>
+                {isAdmin && o.plan !== "agency" && (
+                  <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${o.plan === "trial" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                    {o.plan === "trial" ? "Self-serve trial" : "Standard plan"}
+                  </span>
+                )}
               </div>
             </Link>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** First visit after confirming a self-serve sign-up: name the workspace. */
+function CreateWorkspace({ onCreated }: { onCreated: () => void }) {
+  const { session } = useAuth();
+  const [name, setName] = useState<string>(String(session?.user.user_metadata?.organisation ?? ""));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr("");
+    try {
+      await api("create_workspace", { name });
+      onCreated();
+    } catch (e: any) { setErr(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="mx-auto max-w-md pt-6">
+      <h1 className="text-2xl font-bold">Welcome to {PRODUCT.name}</h1>
+      <p className="mt-1 text-sm text-zinc-600">Your email is confirmed. Name your workspace and you're ready to upload your first video.</p>
+      <form onSubmit={submit} className="card mt-6 space-y-4">
+        <div>
+          <label className="label">Organisation name</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Harbour City FC" required minLength={2} maxLength={80} autoFocus />
+          <p className="mt-1 text-xs text-zinc-500">Shown on your video pages and used in their web address.</p>
+        </div>
+        {err && <p className="text-sm text-red-600">{err}</p>}
+        <button className="btn-primary w-full" disabled={busy || name.trim().length < 2}>{busy ? "Creating…" : "Create workspace"}</button>
+        <p className="text-center text-xs text-zinc-500">Free trial: {TRIAL.videos} videos up to {TRIAL.maxMinutes} minutes each, {TRIAL.playsPerMonth} plays a month.</p>
+      </form>
     </div>
   );
 }

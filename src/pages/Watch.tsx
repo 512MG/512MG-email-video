@@ -4,7 +4,7 @@ import { api, beacon } from "../lib/supabase";
 import { BrandedPage, PrivacyNote, StateMessage, VideoPageContent, type Brand, type PageContent, type TrackFn } from "../components/BrandedPage";
 
 type WatchResponse = {
-  state: "live" | "not_live" | "expired" | "processing" | "not_found";
+  state: "live" | "not_live" | "expired" | "processing" | "not_found" | "unavailable";
   brand?: Brand & {
     not_live_title: string; not_live_message: string;
     expired_title: string; expired_message: string;
@@ -71,6 +71,7 @@ export default function Watch() {
         )}
       </BrandedPage>
     );
+  if (data.state === "unavailable") return <BrandedPage brand={b}><StateMessage title="Not available right now" message="This video can't be shown at the moment. Please try again later." /></BrandedPage>;
   if (data.state === "processing") return <BrandedPage brand={b}><StateMessage title="Almost ready" message="This video is still being prepared. Try again in a few minutes." /></BrandedPage>;
 
   const p = data.page!;

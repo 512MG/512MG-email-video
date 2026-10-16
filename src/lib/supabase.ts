@@ -27,6 +27,8 @@ export type Org = {
   ticket_button_color: string | null;
   card_color: string | null;
   privacy_url: string | null;
+  plan: "trial" | "standard" | "agency";
+  self_serve: boolean;
   fixture_size: FixtureSize;
   sponsors: Sponsor[];
   sponsors_title: string;
@@ -201,6 +203,7 @@ export const slugify = (s: string) =>
 export const FONTS = ["Inter", "Poppins", "Montserrat", "Lato", "Playfair Display", "Oswald", "Nunito", "Roboto Slab", "Bebas Neue"];
 
 export function loadFont(font: string) {
+  if (font === "Inter") return; // bundled with the site, no Google request needed
   const id = `font-${font.replace(/\s+/g, "-")}`;
   if (document.getElementById(id)) return;
   const link = document.createElement("link");

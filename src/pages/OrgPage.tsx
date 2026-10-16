@@ -6,6 +6,40 @@ import BrandEditor from "../components/BrandEditor";
 import FixturesEditor from "../components/FixturesEditor";
 import SponsorsEditor from "../components/SponsorsEditor";
 import { Badge } from "../components/Badge";
+import { LEGAL, TRIAL } from "../product";
+
+/** Reads a video file's length in the browser (null if the browser can't tell). */
+function videoLength(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const el = document.createElement("video");
+    const url = URL.createObjectURL(file);
+    const done = (v: number | null) => { URL.revokeObjectURL(url); resolve(v); };
+    el.preload = "metadata";
+    el.onloadedmetadata = () => done(Number.isFinite(el.duration) ? el.duration : null);
+    el.onerror = () => done(null);
+    setTimeout(() => done(null), 8000);
+    el.src = url;
+  });
+}
+
+/** Agency admins only: move a workspace between plans (the trial has usage limits). */
+function PlanPicker({ org, onSaved }: { org: Org; onSaved: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const change = async (plan: Org["plan"]) => {
+    setBusy(true);
+    const { error } = await supabase.from("organisations").update({ plan }).eq("id", org.id);
+    setBusy(false);
+    if (error) alert(error.message); else onSaved();
+  };
+  return (
+    <select className="ml-auto rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs font-semibold" value={org.plan} disabled={busy}
+      onChange={(e) => change(e.target.value as Org["plan"])} aria-label="Plan">
+      <option value="trial">Free trial (limited)</option>
+      <option value="standard">Standard (paying)</option>
+      <option value="agency">Agency managed</option>
+    </select>
+  );
+}
 
 export default function OrgPage() {
   const { orgId = "" } = useParams();
@@ -31,7 +65,14 @@ export default function OrgPage() {
           {org.logo_url ? <img src={org.logo_url} alt="" className="max-h-8 max-w-8 object-contain" /> : <span className="font-bold" style={{ color: org.text_color }}>{org.name[0]}</span>}
         </div>
         <h1 className="text-2xl font-bold">{org.name}</h1>
+        {isAdmin && <PlanPicker org={org} onSaved={loadOrg} />}
       </div>
+      {org.plan === "trial" && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>Free trial:</strong> up to {TRIAL.videos} videos, each up to {TRIAL.maxMinutes} minutes, and {TRIAL.playsPerMonth} plays a month across all your pages.
+          {" "}{LEGAL.contactEmail ? <>To upgrade, email <a className="font-semibold underline" href={`mailto:${LEGAL.contactEmail}`}>{LEGAL.contactEmail}</a>.</> : "Get in touch to upgrade."}
+        </div>
+      )}
       <div className="mb-6 flex gap-1 overflow-x-auto border-b border-zinc-200">
         {tabs.map(([k, label]) => (
           <button key={k} onClick={() => setSearch({ tab: k })}
@@ -88,6 +129,10 @@ function VideosTab({ org }: { org: Org }) {
     e.preventDefault();
     if (!file) return;
     if (file.size > 200 * 1024 * 1024) { setErr("Files up to 200 MB for now. Export a smaller version (1080p is plenty)."); return; }
+    if (org.plan === "trial") {
+      const secs = await videoLength(file);
+      if (secs !== null && secs > TRIAL.maxMinutes * 60 + 1) { setErr(`On the free trial, videos can be up to ${TRIAL.maxMinutes} minutes. This one is ${Math.ceil(secs / 60)} minutes.`); return; }
+    }
     setErr(""); setProgress(0);
     try {
       const { uploadURL, video: created } = await api<{ uploadURL: string; video: Video }>("create_upload", { org_id: org.id, title: title || file.name.replace(/\.[^.]+$/, "") });

@@ -1,6 +1,7 @@
 // Email Video API: one function, many actions.
 // Public actions: setup_status, setup (first admin only), watch, progress, click, report, maintenance.
 // Signed-in actions: create_upload, cancel_replace, captions, refresh_video, thumbnail, delete_video,
+//                    create_workspace, delete_account,
 //                    create_user, remove_member, reset_password, backup_status, backup_download.
 // Secrets needed (Supabase → Edge Functions → Secrets): CF_ACCOUNT_ID, CF_STREAM_TOKEN.
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -34,6 +35,9 @@ const CF_ACCOUNT = Deno.env.get("CF_ACCOUNT_ID") ?? "";
 const CF_TOKEN = Deno.env.get("CF_STREAM_TOKEN") ?? "";
 
 const admin = createClient(SB_URL, SERVICE, { auth: { persistSession: false } });
+
+// Free-trial limits for self-serve sign-ups (keeps Cloudflare Stream costs capped)
+const TRIAL = { videos: 3, maxSeconds: 180, playsPerMonth: 300 };
 
 // ---------- Cloudflare Stream helpers ----------
 function needStream() {
@@ -326,6 +330,59 @@ const actions: Record<string, Handler> = {
     return json({ ok: true });
   },
 
+  // Self-serve: a newly signed-up (email-confirmed) user creates their own trial workspace
+  async create_workspace(req, body) {
+    const me = await currentUser(req);
+    if (!me.email_confirmed_at) return fail("Please confirm your email address first.", 403);
+    const name = String(body.name ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
+    if (name.length < 2) return fail("Enter your organisation's name.");
+    if (!(await isAgencyAdmin(me.id))) {
+      const { count } = await admin.from("organisations").select("id", { count: "exact", head: true }).eq("created_by", me.id);
+      if ((count ?? 0) >= 1) return fail("You already have a workspace.", 409);
+    }
+    const base = name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "workspace";
+    let slug = base;
+    for (let i = 2; i < 60; i++) {
+      const { data } = await admin.from("organisations").select("id").eq("slug", slug).maybeSingle();
+      if (!data) break;
+      slug = `${base}-${i}`;
+    }
+    const { data: org, error } = await admin.from("organisations")
+      .insert({ name, slug, plan: "trial", self_serve: true, created_by: me.id }).select("*").single();
+    if (error || !org) { console.error(error); return fail("Couldn't create the workspace. Please try again.", 500); }
+    const { error: mErr } = await admin.from("memberships").insert({ org_id: org.id, user_id: me.id, email: me.email, role: "owner" });
+    if (mErr) { await admin.from("organisations").delete().eq("id", org.id); return fail("Couldn't create the workspace. Please try again.", 500); }
+    return json({ org });
+  },
+
+  // Right to erasure: deletes the login, plus any self-serve workspace where this user is the only member
+  async delete_account(req, body) {
+    const me = await currentUser(req);
+    if (String(body.confirm ?? "") !== "DELETE") return fail("Type DELETE to confirm.");
+    if (await isAgencyAdmin(me.id)) return fail("Agency admin logins can't be deleted from here.", 403);
+    const { data: mems } = await admin.from("memberships").select("org_id").eq("user_id", me.id);
+    for (const m of mems ?? []) {
+      const { data: org } = await admin.from("organisations").select("id, self_serve").eq("id", m.org_id).maybeSingle();
+      if (!org?.self_serve) continue;
+      const { count } = await admin.from("memberships").select("user_id", { count: "exact", head: true }).eq("org_id", org.id);
+      if ((count ?? 0) > 1) continue;
+      const { data: vids } = await admin.from("videos").select("stream_uid, pending_uid").eq("org_id", org.id);
+      for (const v of vids ?? []) {
+        for (const uid of [v.stream_uid, v.pending_uid]) {
+          if (uid && CF_ACCOUNT && CF_TOKEN) { try { await cf(`/${uid}`, { method: "DELETE" }); } catch { /* already gone */ } }
+        }
+      }
+      for (const bucket of ["brand", "email-images"]) {
+        const { data: files } = await admin.storage.from(bucket).list(org.id, { limit: 1000 });
+        if (files?.length) await admin.storage.from(bucket).remove(files.map((f) => `${org.id}/${f.name}`));
+      }
+      await admin.from("organisations").delete().eq("id", org.id); // videos, views, clicks, fixtures cascade
+    }
+    const { error } = await admin.auth.admin.deleteUser(me.id);
+    if (error) { console.error(error); return fail("Couldn't delete the account. Please contact us.", 500); }
+    return json({ ok: true });
+  },
+
   async create_user(req, body) {
     const me = await currentUser(req);
     if (!(await isAgencyAdmin(me.id))) return fail("Only agency admins can add people.", 403);
@@ -372,6 +429,13 @@ const actions: Record<string, Handler> = {
     const title = String(body.title ?? "").trim() || "Untitled video";
     await requireMember(me.id, orgId);
     const replaceId = body.replace_video_id ? String(body.replace_video_id) : null;
+    const { data: orgRow } = await admin.from("organisations").select("plan").eq("id", orgId).maybeSingle();
+    if (!orgRow) return fail("Organisation not found.", 404);
+    const trial = orgRow.plan === "trial";
+    if (trial && !replaceId) {
+      const { count } = await admin.from("videos").select("id", { count: "exact", head: true }).eq("org_id", orgId);
+      if ((count ?? 0) >= TRIAL.videos) return fail(`The free trial includes ${TRIAL.videos} videos. Delete one or upgrade to add more.`, 402);
+    }
     let target: Record<string, any> | null = null;
     if (replaceId) {
       const t = await videoForUser(me.id, replaceId);
@@ -380,7 +444,7 @@ const actions: Record<string, Handler> = {
     }
     const r = await cf("/direct_upload", {
       method: "POST",
-      body: JSON.stringify({ maxDurationSeconds: 3600, requireSignedURLs: true, meta: { name: target?.title ?? title, org: orgId } }),
+      body: JSON.stringify({ maxDurationSeconds: trial ? TRIAL.maxSeconds : 3600, requireSignedURLs: true, meta: { name: target?.title ?? title, org: orgId } }),
     });
     if (target) {
       // Old upload that never finished? Just swap it straight in.
@@ -534,6 +598,15 @@ const actions: Record<string, Handler> = {
       state = "live";
     }
     if (state !== "live") return json({ state, brand, page });
+
+    // Free trial: cap plays per calendar month
+    if (!preview && org.plan === "trial") {
+      const start = new Date(); start.setUTCDate(1); start.setUTCHours(0, 0, 0, 0);
+      const { data: ids } = await admin.from("videos").select("id").eq("org_id", org.id);
+      const { count } = await admin.from("views").select("id", { count: "exact", head: true })
+        .in("video_id", (ids ?? []).map((x: any) => x.id)).gte("started_at", start.toISOString());
+      if ((count ?? 0) >= TRIAL.playsPerMonth) return json({ state: "unavailable", brand, page });
+    }
 
     let fresh = v;
     if (!fresh.playback_host) fresh = await syncFromStream(v);

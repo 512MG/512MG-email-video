@@ -23,57 +23,13 @@ function Shell({ title, sub, children }: { title: string; sub?: string; children
 }
 
 /** Simple strength rules shown as you type. */
-function passwordProblem(pw: string, email?: string) {
+export function passwordProblem(pw: string, email?: string) {
   if (pw.length < MIN_PASSWORD) return `Use at least ${MIN_PASSWORD} characters.`;
   const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
   if (kinds < 3) return "Mix at least three of: lowercase, capitals, numbers, symbols.";
   if (email && pw.toLowerCase().includes(email.split("@")[0].toLowerCase())) return "Don't include your email name in the password.";
   if (/^(.)\1+$/.test(pw) || /password|123456|qwerty/i.test(pw)) return "That password is too easy to guess.";
   return null;
-}
-
-export function Login() {
-  const { session, loading, needsMfa } = useAuth();
-  const nav = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
-
-  useEffect(() => {
-    api<{ needsSetup: boolean }>("setup_status").then((r) => setNeedsSetup(r.needsSetup)).catch(() => {});
-  }, []);
-
-  if (!loading && session && needsMfa) return <Navigate to="/verify" replace />;
-  if (!loading && session) return <Navigate to="/" replace />;
-  if (needsSetup) return <Navigate to="/setup" replace />;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true); setErr("");
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) {
-      setBusy(false);
-      setErr(/rate|too many/i.test(error.message) ? "Too many attempts. Please wait a few minutes and try again." : "That email and password don't match.");
-      return;
-    }
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    setBusy(false);
-    nav(aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2" ? "/verify" : "/");
-  };
-
-  return (
-    <Shell title="Sign in" sub="Video pages dashboard">
-      <form onSubmit={submit} className="space-y-4">
-        <div><label className="label">Email</label><input className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus /></div>
-        <div><label className="label">Password</label><input className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
-        {err && <p className="text-sm text-red-600">{err}</p>}
-        <button className="btn-primary w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
-        <p className="text-center text-xs text-zinc-500">Forgotten your password? Ask your account manager to reset it.</p>
-      </form>
-    </Shell>
-  );
 }
 
 /** Second step of sign-in for anyone with two-step verification switched on. */
@@ -193,6 +149,7 @@ export function Account() {
       </div>
       <TwoStep />
       {isAdmin && <Backups />}
+      {!isAdmin && <YourData />}
     </div>
   );
 }
@@ -313,6 +270,55 @@ function Backups() {
       <button className="btn-ghost" disabled={busy} onClick={download}>{busy ? "Preparing…" : "Download a backup now"}</button>
       <p className="text-xs text-zinc-500">Tip: download one every month or so and keep it somewhere safe (e.g. your Google Drive) as an off-site copy.</p>
       {err && <p className="text-sm text-red-600">{err}</p>}
+    </div>
+  );
+}
+
+/** Marketing preference and account deletion (UK GDPR: withdraw consent, right to erasure). */
+function YourData() {
+  const { session } = useAuth();
+  const nav = useNavigate();
+  const [updates, setUpdates] = useState<boolean>(!!session?.user.user_metadata?.product_updates);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const toggle = async (on: boolean) => {
+    setUpdates(on);
+    const { error } = await supabase.auth.updateUser({ data: { product_updates: on, product_updates_changed_at: new Date().toISOString() } });
+    setMsg(error ? error.message : on ? "You'll get occasional product news." : "You won't get product news emails.");
+  };
+
+  const remove = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setMsg("");
+    try {
+      await api("delete_account", { confirm });
+      await supabase.auth.signOut();
+      nav("/login");
+    } catch (e: any) { setMsg(e.message); setBusy(false); }
+  };
+
+  return (
+    <div className="card space-y-4">
+      <div>
+        <h2 className="font-semibold">Your data</h2>
+        <p className="text-xs text-zinc-500">See our <a href="/privacy" target="_blank" className="underline">privacy notice</a> for what we keep and why.</p>
+      </div>
+      <label className="flex items-start gap-3 text-sm">
+        <input type="checkbox" className="mt-0.5 h-4 w-4" checked={updates} onChange={(e) => toggle(e.target.checked)} />
+        <span>Email me occasional product news and tips</span>
+      </label>
+      <form onSubmit={remove} className="space-y-2 border-t border-zinc-200 pt-4">
+        <h3 className="text-sm font-semibold text-red-700">Delete my account</h3>
+        <p className="text-xs text-zinc-600">
+          This deletes your login straight away. If you're the only person in your workspace, it also deletes the workspace,
+          its videos, pages and statistics. Video links you've already sent will stop working. This can't be undone.
+        </p>
+        <input className="input" placeholder="Type DELETE to confirm" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        <button className="btn-danger" disabled={busy || confirm !== "DELETE"}>{busy ? "Deleting…" : "Delete my account"}</button>
+      </form>
+      {msg && <p className="text-sm text-zinc-600">{msg}</p>}
     </div>
   );
 }

@@ -83,7 +83,7 @@ export function BrandedPage({ brand, children, compact = false }: { brand: Brand
   return (
     <div
       className={`flex w-full flex-col items-center ${compact ? "min-h-full px-4 pb-8 pt-5" : "min-h-screen px-4 pb-12 pt-6 sm:pt-10"}`}
-      style={{ background: brand.bg_color, color: brand.text_color, fontFamily: `'${brand.font}', system-ui, sans-serif` }}
+      style={{ background: brand.bg_color, color: brand.text_color, fontFamily: brand.font === "Inter" ? "'Inter Variable', Inter, system-ui, sans-serif" : `'${brand.font}', system-ui, sans-serif` }}
     >
       <header className={`flex items-center justify-center ${compact ? "mb-4 h-10" : "mb-5 h-12 sm:mb-8 sm:h-14"}`}>
         {brand.logo_url ? (
