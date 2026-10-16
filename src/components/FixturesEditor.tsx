@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { fmtKickoff, joinKickoff, splitKickoff, supabase, type Fixture, type Org } from "../lib/supabase";
+import { ImageSlot } from "./PageEditor";
 
-type Draft = { date: string; time: string; title: string; home_away: "" | "home" | "away" | "neutral"; competition: string; venue: string; ticket_url: string };
-const empty: Draft = { date: "", time: "", title: "", home_away: "", competition: "", venue: "", ticket_url: "" };
+type Draft = { date: string; time: string; title: string; home_away: "" | "home" | "away" | "neutral"; competition: string; venue: string; ticket_url: string; image_url: string };
+const empty: Draft = { date: "", time: "", title: "", home_away: "", competition: "", venue: "", ticket_url: "", image_url: "" };
 
 function normaliseUrl(u: string) {
   const s = u.trim();
@@ -41,6 +42,7 @@ export default function FixturesEditor({ org }: { org: Org }) {
       competition: d.competition.trim() || null,
       venue: d.venue.trim() || null,
       ticket_url: normaliseUrl(d.ticket_url) || null,
+      image_url: d.image_url || null,
     };
     const { error } = editing
       ? await supabase.from("fixtures").update(row).eq("id", editing)
@@ -52,7 +54,7 @@ export default function FixturesEditor({ org }: { org: Org }) {
 
   const edit = (f: Fixture) => {
     setEditing(f.id);
-    setD({ ...splitKickoff(f.kickoff, f.time_tbc), title: f.title, home_away: f.home_away ?? "", competition: f.competition ?? "", venue: f.venue ?? "", ticket_url: f.ticket_url ?? "" });
+    setD({ ...splitKickoff(f.kickoff, f.time_tbc), title: f.title, home_away: f.home_away ?? "", competition: f.competition ?? "", venue: f.venue ?? "", ticket_url: f.ticket_url ?? "", image_url: f.image_url ?? "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -90,6 +92,11 @@ export default function FixturesEditor({ org }: { org: Org }) {
           <div><label className="label">Venue</label><input className="input" value={d.venue} onChange={(e) => set("venue", e.target.value)} placeholder="Optional" /></div>
           <div><label className="label">Ticket link</label><input className="input" value={d.ticket_url} onChange={(e) => set("ticket_url", e.target.value)} onBlur={(e) => set("ticket_url", normaliseUrl(e.target.value))} placeholder="Optional, adds a Tickets button" /></div>
         </div>
+        <div>
+          <label className="label">Poster <span className="normal-case text-zinc-400">(optional)</span></label>
+          <ImageSlot orgId={org.id} url={d.image_url} onChange={(u) => set("image_url", u)} prefix="fixture"
+            hint="Shown above this fixture on any video that lists it. Square (1080 × 1080) works best. Tapping it opens the ticket link if there is one." />
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <button className="btn-primary" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Add fixture"}</button>
           {editing && <button type="button" className="text-sm text-zinc-500 hover:text-ink" onClick={() => { setEditing(null); setD(empty); }}>Cancel</button>}
@@ -124,8 +131,13 @@ function FixtureTable({ title, rows, onEdit, onDelete, empty, muted }: {
               <tr key={f.id} className="border-t border-zinc-100 first:border-0">
                 <td className="whitespace-nowrap px-4 py-3 text-xs">{fmtKickoff(f.kickoff, f.time_tbc)}</td>
                 <td className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                  {f.image_url && <img src={f.image_url} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />}
+                  <div>
                   <div className="font-semibold">{f.title}{f.home_away && <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase text-zinc-600">{f.home_away}</span>}</div>
                   <div className="text-xs text-zinc-500">{[f.competition, f.venue].filter(Boolean).join(" · ")}{f.ticket_url ? " · Tickets link" : ""}</div>
+                  </div>
+                  </div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right">
                   <button className="mr-3 text-xs font-semibold text-zinc-600 hover:text-ink" onClick={() => onEdit(f)}>Edit</button>

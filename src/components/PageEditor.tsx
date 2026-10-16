@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fmtKickoff, joinKickoff, supabase, type Fixture, type Org, type Video } from "../lib/supabase";
+import { fmtKickoff, joinKickoff, supabase, uploadImage, type Fixture, type Org, type Video } from "../lib/supabase";
 import { BrandedPage, VideoPageContent, VideoPlaceholder, type PageButton } from "./BrandedPage";
 import { SizePicker } from "./BrandEditor";
 
@@ -12,6 +12,8 @@ type Draft = {
   corner_style: "" | "rounded" | "square";
   fixture_size: "" | "small" | "medium" | "large" | "xl";
   fixtures_title_size: "small" | "medium" | "large" | "xl";
+  feature_image_url: string;
+  feature_image_link: string;
 };
 
 const fromVideo = (v: Video): Draft => ({
@@ -27,6 +29,8 @@ const fromVideo = (v: Video): Draft => ({
   corner_style: v.corner_style ?? "",
   fixture_size: v.fixture_size ?? "",
   fixtures_title_size: v.fixtures_title_size ?? "medium",
+  feature_image_url: v.feature_image_url ?? "",
+  feature_image_link: v.feature_image_link ?? "",
 });
 
 function normaliseUrl(u: string) {
@@ -99,6 +103,8 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
       corner_style: d.corner_style || null,
       fixture_size: d.fixture_size || null,
       fixtures_title_size: d.fixtures_title_size,
+      feature_image_url: d.feature_image_url || null,
+      feature_image_link: d.feature_image_url && d.feature_image_link.trim() ? normaliseUrl(d.feature_image_link) : null,
     });
     setSaving(false);
     if (ok) { setD({ ...d, buttons }); setSavedAt(Date.now()); }
@@ -194,6 +200,17 @@ export default function PageEditor({ org, video, onSave }: { org: Org; video: Vi
               <button type="button" className="btn-ghost mt-2" onClick={addBtn}>+ Add a button</button>
             )}
           </div>
+        </Group>
+
+        <Group title="Image above the fixtures">
+          <ImageSlot orgId={org.id} url={d.feature_image_url} onChange={(u) => set("feature_image_url", u)}
+            hint="Optional, e.g. this week's match poster. Square images (1080 × 1080) work best. Shown full width on phones." />
+          {d.feature_image_url && (
+            <Field label="Link when tapped" hint="Optional, e.g. the ticket page. Taps are counted in Stats.">
+              <input className="input" value={d.feature_image_link} onChange={(e) => set("feature_image_link", e.target.value)}
+                onBlur={(e) => set("feature_image_link", normaliseUrl(e.target.value))} placeholder="https://…" />
+            </Field>
+          )}
         </Group>
 
         <Group title="Extras">
@@ -368,6 +385,34 @@ function QuickFixture({ orgId, onAdded, first }: { orgId: string; onAdded: () =>
         {err && <span className="text-sm text-red-600">{err}</span>}
       </div>
       <p className="text-xs text-zinc-500">Fixtures are shared across all of this organisation's videos. Competition and venue can be added under "Manage all fixtures".</p>
+    </div>
+  );
+}
+
+/** Upload / replace / remove a single image, with a thumbnail. */
+export function ImageSlot({ orgId, url, onChange, hint, prefix = "image" }: { orgId: string; url: string; onChange: (u: string) => void; hint?: string; prefix?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const pick = async (f: File) => {
+    setBusy(true); setErr("");
+    try { onChange(await uploadImage(f, orgId, prefix)); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-zinc-300 bg-zinc-50">
+          {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : <span className="text-[10px] text-zinc-400">No image</span>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className={`btn-ghost cursor-pointer ${busy ? "pointer-events-none opacity-50" : ""}`}>
+            {busy ? "Uploading…" : url ? "Replace image" : "Upload image"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) pick(f); }} />
+          </label>
+          {url && !busy && <button type="button" className="text-sm font-semibold text-red-600 hover:text-red-800" onClick={() => onChange("")}>Remove</button>}
+        </div>
+      </div>
+      {hint && <p className="text-xs text-zinc-400">{hint}</p>}
+      {err && <p className="text-sm text-red-600">{err}</p>}
     </div>
   );
 }

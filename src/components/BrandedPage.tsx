@@ -26,6 +26,7 @@ export type PageFixture = {
   competition: string | null;
   venue: string | null;
   ticket_url: string | null;
+  image_url?: string | null;
 };
 
 export type PageSponsor = { name: string; logo_url: string | null; url: string | null };
@@ -38,6 +39,8 @@ export type PageContent = {
   fixtures?: PageFixture[];
   fixtures_title?: string;
   fixtures_title_size?: "small" | "medium" | "large" | "xl";
+  feature_image_url?: string | null;
+  feature_image_link?: string | null;
   sponsors?: PageSponsor[];
   sponsors_title?: string;
   countdown?: "none" | "expiry" | "fixture";
@@ -45,6 +48,23 @@ export type PageContent = {
 };
 
 export type TrackFn = (kind: "button" | "fixture" | "sponsor" | "link", label: string, url: string) => void;
+
+/** A square-ish image (e.g. a 1080×1080 match poster): full width on phones, capped on desktop. */
+function PageImage({ src, alt, link, brand, compact, onTrack, trackLabel }: {
+  src: string; alt: string; link?: string | null; brand: Brand; compact: boolean; onTrack?: TrackFn; trackLabel: string;
+}) {
+  const img = (
+    <img src={src} alt={alt} loading="lazy" decoding="async"
+      className={`block h-auto w-full shadow-xl ring-1 ring-black/10 ${brand.corner_style === "square" ? "" : "rounded-2xl"}`} />
+  );
+  return (
+    <div className={`mx-auto w-full ${compact ? "" : "max-w-[560px]"}`}>
+      {link ? (
+        <a href={link} target="_blank" rel="noopener" onClick={() => onTrack?.("link", trackLabel, link)} className="block transition hover:opacity-90">{img}</a>
+      ) : img}
+    </div>
+  );
+}
 
 const HEADING_SIZES = {
   full: { small: "text-base", medium: "text-xl", large: "text-2xl sm:text-3xl", xl: "text-3xl sm:text-4xl" },
@@ -135,11 +155,25 @@ export function VideoPageContent({ brand, content, video, compact = false, onTra
         </div>
       )}
 
+      {content.feature_image_url && (
+        <div className={gap}>
+          <PageImage src={content.feature_image_url} alt={content.fixtures_title || content.headline || "Image"} link={content.feature_image_link}
+            brand={brand} compact={compact} onTrack={onTrack} trackLabel="Image" />
+        </div>
+      )}
+
       {fixtures.length > 0 && (
         <section className={`mx-auto w-full max-w-2xl text-left ${gap}`}>
           <h2 className={`font-bold leading-tight ${compact ? "mb-3" : "mb-4"} ${HEADING_SIZES[compact ? "compact" : "full"][content.fixtures_title_size ?? "medium"]}`}>{content.fixtures_title || "Upcoming fixtures"}</h2>
           <div className={compact ? "space-y-2.5" : "space-y-4"}>
-            {fixtures.map((f) => <FixtureCard key={f.id} f={f} brand={brand} compact={compact} onTrack={onTrack} />)}
+            {fixtures.map((f) => (
+              <div key={f.id} className={compact ? "space-y-2" : "space-y-3"}>
+                {f.image_url && (
+                  <PageImage src={f.image_url} alt={f.title} link={f.ticket_url} brand={brand} compact={compact} onTrack={onTrack} trackLabel={`Poster: ${f.title}`} />
+                )}
+                <FixtureCard f={f} brand={brand} compact={compact} onTrack={onTrack} />
+              </div>
+            ))}
           </div>
         </section>
       )}

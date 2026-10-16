@@ -48,6 +48,7 @@ export type Fixture = {
   competition: string | null;
   venue: string | null;
   ticket_url: string | null;
+  image_url: string | null;
 };
 
 export type Video = {
@@ -80,6 +81,8 @@ export type Video = {
   corner_style: "rounded" | "square" | null;
   fixture_size: FixtureSize | null;
   fixtures_title_size: FixtureSize;
+  feature_image_url: string | null;
+  feature_image_link: string | null;
   created_at: string;
 };
 
@@ -195,4 +198,35 @@ export function loadFont(font: string) {
   link.rel = "stylesheet";
   link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(font)}:wght@400;600;700&display=swap`;
   document.head.appendChild(link);
+}
+
+/**
+ * Shrinks an image in the browser (longest side max 1080px, JPEG ~82%) and uploads it
+ * to the organisation's folder in the public "brand" bucket. Returns the public URL.
+ */
+export async function uploadImage(file: File, orgId: string, prefix: string, maxSide = 1080): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("That isn't an image. Use JPG, PNG or WebP.");
+  if (file.size > 20 * 1024 * 1024) throw new Error("Image is over 20 MB. Export a smaller version.");
+  let blob: Blob = file;
+  let ext = (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  if (file.type !== "image/gif" && file.type !== "image/svg+xml") {
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    await img.decode();
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#ffffff"; // flatten transparency for JPEG
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(img.src);
+    const out: Blob | null = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+    if (out) { blob = out; ext = "jpg"; }
+  }
+  const path = `${orgId}/${prefix}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("brand").upload(path, blob, { contentType: blob.type || file.type, cacheControl: "31536000" });
+  if (error) throw new Error(`Upload failed: ${error.message}`);
+  return supabase.storage.from("brand").getPublicUrl(path).data.publicUrl;
 }

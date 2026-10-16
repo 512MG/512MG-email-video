@@ -15,3 +15,4 @@ See the Supabase dashboard (Database → Migrations) for the exact SQL.
 11. `fixture_text_size` – organisations.fixture_size (default) and videos.fixture_size (override): small / medium / large / xl.
 12. `fixtures_heading_size` – videos.fixtures_title_size: size of the heading above the fixtures list.
 13. `backups_bucket` – private storage bucket for weekly JSON backups (server-only). Scheduled by the Worker cron in `worker/index.ts` (Mon/Wed/Fri 06:17 UTC → `maintenance` action: keeps the DB awake, backs up once every 6+ days, keeps 8).
+14. `feature_and_fixture_images` – videos.feature_image_url + feature_image_link (image above the fixtures, optional tap-through link); fixtures.image_url (per-fixture poster, taps through to the ticket link). Images are resized to max 1080px in the browser and stored in the public `brand` bucket.

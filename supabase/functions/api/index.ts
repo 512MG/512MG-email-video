@@ -489,13 +489,13 @@ const actions: Record<string, Handler> = {
     let fixtures: unknown[] = [];
     if (v.show_fixtures) {
       const cutoff = Date.now() - 2 * 3600 * 1000;
-      const { data: fx } = await admin.from("fixtures").select("id, kickoff, time_tbc, title, home_away, competition, venue, ticket_url")
+      const { data: fx } = await admin.from("fixtures").select("id, kickoff, time_tbc, title, home_away, competition, venue, ticket_url, image_url")
         .eq("org_id", org.id).gte("kickoff", new Date(cutoff - 24 * 3600 * 1000).toISOString())
         .order("kickoff", { ascending: true }).limit(12);
       fixtures = (fx ?? [])
         .filter((f: any) => Date.parse(f.kickoff) + (f.time_tbc ? 24 * 3600 * 1000 : 0) >= cutoff)
         .slice(0, 6)
-        .map((f: any) => ({ ...f, ticket_url: safeUrl(f.ticket_url) }));
+        .map((f: any) => ({ ...f, ticket_url: safeUrl(f.ticket_url), image_url: safeUrl(f.image_url) }));
     }
     const sponsors = v.show_sponsors
       ? (Array.isArray(org.sponsors) ? org.sponsors : [])
@@ -511,6 +511,8 @@ const actions: Record<string, Handler> = {
       fixtures,
       fixtures_title: v.fixtures_title || "Upcoming fixtures",
       fixtures_title_size: ["small", "medium", "large", "xl"].includes(v.fixtures_title_size) ? v.fixtures_title_size : "medium",
+      feature_image_url: safeUrl(v.feature_image_url),
+      feature_image_link: safeUrl(v.feature_image_link),
       sponsors,
       sponsors_title: org.sponsors_title || "Our partners",
       countdown: v.countdown ?? "none",
