@@ -13,6 +13,7 @@ export type Brand = {
   ticket_button_color?: string | null;
   card_color?: string | null;
   fixture_size?: "small" | "medium" | "large" | "xl";
+  privacy_url?: string | null;
 };
 
 export type PageButton = { label: string; url: string; style: "primary" | "secondary"; color?: string | null };
@@ -334,5 +335,53 @@ export function VideoPlaceholder({ poster }: { poster?: string | null }) {
         <svg viewBox="0 0 24 24" className="ml-1 h-6 w-6 text-black" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
       </span>
     </div>
+  );
+}
+
+/** Short privacy line at the foot of the watch page, with a panel explaining what's recorded and an opt-out. */
+export function PrivacyNote({ brand, optedOut, onOptOut }: { brand: Brand; optedOut: boolean; onOptOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <p className="mt-12 text-center text-xs opacity-60">
+        {optedOut ? "Your visits to this page aren't being counted." : "This page counts views anonymously to see how the video performs."}{" "}
+        <button type="button" className="underline underline-offset-2 hover:opacity-100" onClick={() => setOpen(true)}>About your privacy</button>
+      </p>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center" role="dialog" aria-modal="true" aria-label="About your privacy"
+          onClick={() => setOpen(false)}>
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 text-left text-sm leading-relaxed text-zinc-700 shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-zinc-900">About your privacy</h2>
+            <p className="mt-3">This video page is provided by <strong>{brand.name}</strong> and run on their behalf by 512 Media Group.</p>
+            <h3 className="mt-4 font-semibold text-zinc-900">What we record</h3>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              <li>A random ID saved in your browser, so the same person opening the page twice isn't counted twice</li>
+              <li>Whether you're on a phone, tablet or computer</li>
+              <li>How much of the video you watched</li>
+              <li>Which buttons or links on this page you tap</li>
+            </ul>
+            <p className="mt-3">We don't record your name, email address or IP address, and there are no advertising or tracking cookies. The figures are only used to see how the video performed.</p>
+            <h3 className="mt-4 font-semibold text-zinc-900">Other services</h3>
+            <p className="mt-1">The video is streamed by Cloudflare and the page's lettering may load from Google Fonts. Like any website, they receive your device's IP address so they can deliver the content.</p>
+            <h3 className="mt-4 font-semibold text-zinc-900">Your choice</h3>
+            {optedOut ? (
+              <p className="mt-1 font-medium text-zinc-900">Done. Your visits won't be counted on this device from now on.</p>
+            ) : (
+              <>
+                <p className="mt-1">You can stop your visits being counted on this device. The video will still play as normal.</p>
+                <button type="button" className="mt-3 rounded-lg border border-zinc-300 px-4 py-2 font-semibold text-zinc-900 hover:bg-zinc-50" onClick={onOptOut}>
+                  Don't count my visits
+                </button>
+              </>
+            )}
+            {brand.privacy_url && (
+              <p className="mt-4">More detail is in <a className="font-semibold text-zinc-900 underline" href={brand.privacy_url} target="_blank" rel="noopener noreferrer">{brand.name}'s privacy policy</a>.</p>
+            )}
+            <button type="button" className="mt-6 w-full rounded-lg bg-zinc-900 py-2.5 font-semibold text-white" onClick={() => setOpen(false)}>Close</button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

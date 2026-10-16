@@ -26,6 +26,7 @@ export type Org = {
   fixture_badge_color: string | null;
   ticket_button_color: string | null;
   card_color: string | null;
+  privacy_url: string | null;
   fixture_size: FixtureSize;
   sponsors: Sponsor[];
   sponsors_title: string;

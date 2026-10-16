@@ -40,9 +40,13 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
     setSaving(true);
     const fields: (keyof Draft)[] = ["logo_url", "bg_color", "text_color", "accent_color", "font", "corner_style",
       "fixture_badge_color", "ticket_button_color", "card_color", "fixture_size",
-      "not_live_title", "not_live_message", "expired_title", "expired_message"];
+      "not_live_title", "not_live_message", "expired_title", "expired_message", "privacy_url"];
     const patch: Record<string, unknown> = {};
     fields.forEach((f) => (patch[f] = typeof d[f] === "string" && (d[f] as string).trim() === "" ? null : d[f]));
+    if (typeof patch.privacy_url === "string") {
+      const u = patch.privacy_url.trim();
+      patch.privacy_url = /^https?:\/\//i.test(u) ? u : `https://${u}`;
+    }
     ["not_live_title", "not_live_message", "expired_title", "expired_message"].forEach((f) => { if (patch[f] === null) patch[f] = ""; });
     const { error } = await supabase.from("organisations").update(patch).eq("id", org.id);
     setSaving(false);
@@ -109,6 +113,13 @@ export default function BrandEditor({ org, onSaved }: { org: Org; onSaved: () =>
           <Field label="Not live yet – message"><input className="input" value={d.not_live_message} onChange={(e) => set("not_live_message", e.target.value)} onFocus={() => setPreviewState("not_live")} /></Field>
           <Field label="Expired – title"><input className="input" value={d.expired_title} onChange={(e) => set("expired_title", e.target.value)} onFocus={() => setPreviewState("expired")} /></Field>
           <Field label="Expired – message"><input className="input" value={d.expired_message} onChange={(e) => set("expired_message", e.target.value)} onFocus={() => setPreviewState("expired")} /></Field>
+        </Section>
+
+        <Section title="Privacy" hint="Every video page shows a short note that views are counted anonymously, with a link to a page explaining it.">
+          <Field label="Privacy policy link (optional)">
+            <input className="input" placeholder="https://www.club.com/privacy" value={d.privacy_url ?? ""} onChange={(e) => set("privacy_url", e.target.value)} />
+          </Field>
+          <p className="text-xs text-zinc-500">Add this organisation's own privacy policy so viewers can find it from the video page.</p>
         </Section>
 
         <div className="flex items-center gap-3">

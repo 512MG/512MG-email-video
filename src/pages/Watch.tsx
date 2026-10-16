@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, beacon } from "../lib/supabase";
-import { BrandedPage, StateMessage, VideoPageContent, type Brand, type PageContent, type TrackFn } from "../components/BrandedPage";
+import { BrandedPage, PrivacyNote, StateMessage, VideoPageContent, type Brand, type PageContent, type TrackFn } from "../components/BrandedPage";
 
 type WatchResponse = {
   state: "live" | "not_live" | "expired" | "processing" | "not_found";
@@ -15,7 +15,13 @@ type WatchResponse = {
   player?: { iframe: string; poster: string; duration: number | null; captions?: boolean };
 };
 
+const OPT_OUT = "ev_optout";
+function isOptedOut() {
+  try { return localStorage.getItem(OPT_OUT) === "1"; } catch { return false; }
+}
+
 function viewerId() {
+  if (isOptedOut()) return undefined;
   try {
     let id = localStorage.getItem("ev_viewer");
     if (!id) { id = crypto.randomUUID(); localStorage.setItem("ev_viewer", id); }
@@ -31,9 +37,14 @@ export default function Watch() {
   const preview = search.get("preview") === "1";
   const [data, setData] = useState<WatchResponse | null>(null);
   const [err, setErr] = useState(false);
+  const [optedOut, setOptedOut] = useState(isOptedOut);
+  const optOut = () => {
+    try { localStorage.setItem(OPT_OUT, "1"); localStorage.removeItem("ev_viewer"); } catch { /* private mode: nothing stored anyway */ }
+    setOptedOut(true);
+  };
 
   useEffect(() => {
-    api<WatchResponse>("watch", { org, video, viewer_id: viewerId(), device: device(), preview })
+    api<WatchResponse>("watch", { org, video, viewer_id: viewerId(), device: device(), preview, no_track: isOptedOut() })
       .then((d) => {
         setData(d);
         document.title = d.page?.headline || d.brand?.name || "Video";
@@ -63,7 +74,7 @@ export default function Watch() {
   if (data.state === "processing") return <BrandedPage brand={b}><StateMessage title="Almost ready" message="This video is still being prepared. Try again in a few minutes." /></BrandedPage>;
 
   const p = data.page!;
-  const track: TrackFn | undefined = data.view_id && data.vid
+  const track: TrackFn | undefined = data.view_id && data.vid && !optedOut
     ? (kind, label, url) => beacon("click", { vid: data.vid, view_id: data.view_id, kind, label, url })
     : undefined; // previews aren't tracked
   return (
@@ -73,8 +84,9 @@ export default function Watch() {
         brand={b}
         content={{ ...p, buttons: p.buttons ?? [] }}
         onTrack={track}
-        video={<Player src={data.player!.iframe} poster={data.player!.poster} captions={!!data.player!.captions} viewId={data.view_id ?? null} />}
+        video={<Player src={data.player!.iframe} poster={data.player!.poster} captions={!!data.player!.captions} viewId={optedOut ? null : data.view_id ?? null} />}
       />
+      {!preview && <PrivacyNote brand={b} optedOut={optedOut} onOptOut={optOut} />}
     </BrandedPage>
   );
 }

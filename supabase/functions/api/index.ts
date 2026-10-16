@@ -68,6 +68,12 @@ function scrub(msg: string) {
   return out.replace(/Bearer\s+\S+/gi, "Bearer [hidden]").replace(/cf[a-z]{2}_[A-Za-z0-9_-]+/g, "[hidden]").slice(0, 300);
 }
 
+/** Accepts only web, email and phone links. */
+const safeUrl = (u: unknown) => {
+  const s = String(u ?? "").trim();
+  return /^(https?:\/\/|mailto:|tel:)/i.test(s) ? s : null;
+};
+
 /** Accepts only #rrggbb colours. */
 const hex = (c: unknown) => (typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c.trim()) ? c.trim() : null);
 
@@ -474,14 +480,11 @@ const actions: Record<string, Handler> = {
       fixture_badge_color: hex(org.fixture_badge_color),
       ticket_button_color: hex(org.ticket_button_color),
       card_color: hex(org.card_color),
+      privacy_url: safeUrl(org.privacy_url),
     };
     if (!v) return json({ state: "not_found", brand });
 
     // Each video owns its page content. Blank = not shown.
-    const safeUrl = (u: unknown) => {
-      const s = String(u ?? "").trim();
-      return /^(https?:\/\/|mailto:|tel:)/i.test(s) ? s : null;
-    };
     const buttons = (Array.isArray(v.buttons) ? v.buttons : [])
       .map((b: any) => ({ label: String(b?.label ?? "").trim().slice(0, 60), url: safeUrl(b?.url), style: b?.style === "secondary" ? "secondary" : "primary", color: hex(b?.color) }))
       .filter((b: any) => b.label && b.url)
@@ -543,7 +546,8 @@ const actions: Record<string, Handler> = {
     const base = `https://${fresh.playback_host}/${token}`;
 
     let viewId: string | null = null;
-    if (!preview) {
+    // Viewers who chose "Don't count my visits" are not recorded at all
+    if (!preview && body.no_track !== true) {
       // Same viewer re-opening within 30 minutes counts as the same view
       const { data: recent } = await admin.from("views").select("id").eq("video_id", v.id).eq("viewer_id", viewerId)
         .gte("started_at", new Date(now - 30 * 60 * 1000).toISOString()).order("started_at", { ascending: false }).limit(1).maybeSingle();
